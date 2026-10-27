@@ -1,0 +1,6 @@
+{
+  "name": "Arcane Royale",
+  "description": "2D top-down mobile-optimized battle royale game built with pure HTML5 Canvas, featuring custom combat kits, bot AI, and shrinking storm.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
