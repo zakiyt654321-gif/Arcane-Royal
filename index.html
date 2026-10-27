@@ -1493,8 +1493,12 @@
         joystickCenterY: 0,
         joystickX: 0,
         joystickY: 0,
+        moveX: 0,
+        moveY: 0,
         maxRange: 45,
         isHoldingSword: false,
+        swordPointerId: null,
+        buttonPointerIds: {},
         buttons: { sword: false, spell: false, dash: false, art: false },
 
         init() {
@@ -1526,13 +1530,15 @@
             }
           });
 
-          // FIX #8: Attach pointerup, pointercancel, and pointerleave to window to prevent joystick lock
+          // FIX #8 & Multi-Touch: Attach pointerup, pointercancel, and pointerleave with pointerId check
           const resetJoystick = (e) => {
             if (this.joystickActive && (e.pointerId === undefined || e.pointerId === this.joystickPointerId)) {
               this.joystickActive = false;
               this.joystickPointerId = null;
               this.joystickX = 0;
               this.joystickY = 0;
+              this.moveX = 0;
+              this.moveY = 0;
               jStick.style.transform = `translate(0px, 0px)`;
             }
           };
@@ -1540,21 +1546,25 @@
           window.addEventListener('pointercancel', resetJoystick);
           window.addEventListener('pointerleave', resetJoystick);
 
-          // Action Buttons binding (Sword has continuous hold-to-attack on mobile)
+          // Action Buttons binding with strict pointer ID tracking (prevents multi-touch drop)
           const swordBtn = document.getElementById('btn-sword');
           if (swordBtn) {
             swordBtn.addEventListener('pointerdown', (e) => {
               e.preventDefault();
               AudioEngine.init();
               this.isHoldingSword = true;
+              this.swordPointerId = e.pointerId;
               this.buttons['sword'] = true;
               swordBtn.classList.add('pressed');
               Game.playerAction('sword');
             });
-            const releaseSword = () => {
-              this.isHoldingSword = false;
-              this.buttons['sword'] = false;
-              swordBtn.classList.remove('pressed');
+            const releaseSword = (e) => {
+              if (this.swordPointerId !== null && (e.pointerId === undefined || e.pointerId === this.swordPointerId)) {
+                this.isHoldingSword = false;
+                this.swordPointerId = null;
+                this.buttons['sword'] = false;
+                swordBtn.classList.remove('pressed');
+              }
             };
             window.addEventListener('pointerup', releaseSword);
             window.addEventListener('pointercancel', releaseSword);
@@ -1571,13 +1581,17 @@
           el.addEventListener('pointerdown', (e) => {
             e.preventDefault();
             AudioEngine.init();
+            this.buttonPointerIds[actionKey] = e.pointerId;
             this.buttons[actionKey] = true;
             el.classList.add('pressed');
             callback();
           });
-          const release = () => {
-            this.buttons[actionKey] = false;
-            el.classList.remove('pressed');
+          const release = (e) => {
+            if (this.buttonPointerIds[actionKey] !== undefined && (e.pointerId === undefined || e.pointerId === this.buttonPointerIds[actionKey])) {
+              delete this.buttonPointerIds[actionKey];
+              this.buttons[actionKey] = false;
+              el.classList.remove('pressed');
+            }
           };
           window.addEventListener('pointerup', release);
           window.addEventListener('pointercancel', release);
@@ -1602,14 +1616,18 @@
           if (dist < deadzone) {
             this.joystickX = 0;
             this.joystickY = 0;
+            this.moveX = 0;
+            this.moveY = 0;
           } else {
             this.joystickX = dx / maxRange;
             this.joystickY = dy / maxRange;
+            this.moveX = this.joystickX;
+            this.moveY = this.joystickY;
           }
         },
 
         getMovementVector() {
-          return { x: this.joystickX, y: this.joystickY };
+          return { x: this.moveX, y: this.moveY };
         }
       };
 
@@ -1636,7 +1654,7 @@
           this.x += (targetX - this.x) * 5 * deltaTime;
           this.y += (targetY - this.y) * 5 * deltaTime;
           if (this.shakeAmount > 0.05) {
-            this.shakeAmount *= 0.9;
+            this.shakeAmount *= Math.pow(0.9, deltaTime * 60);
           } else {
             this.shakeAmount = 0;
           }
@@ -1675,6 +1693,18 @@
       // ==========================================
       // TOP-DOWN WIZARD SPRITE RENDERING
       // ==========================================
+      const GRADIENT_CACHE = {};
+      function getRobeGradient(ctx, charKey, mainColor, robeColor) {
+        if (!GRADIENT_CACHE[charKey]) {
+          const robeGrad = ctx.createRadialGradient(2, -2, 2, 0, 0, 22);
+          robeGrad.addColorStop(0, mainColor);
+          robeGrad.addColorStop(0.35, robeColor);
+          robeGrad.addColorStop(1, '#05070d');
+          GRADIENT_CACHE[charKey] = robeGrad;
+        }
+        return GRADIENT_CACHE[charKey];
+      }
+
       function drawWizardSprite(ctx, charKey, isPlayer, facingAngle, invuln, hitFlash, swordActive) {
         ctx.save();
 
@@ -1715,7 +1745,7 @@
 
         ctx.rotate(facingAngle);
 
-        // Flowing Wizard Robe with Pseudo-3D Volumetric Radial Gradient
+        // Flowing Wizard Robe with Pseudo-3D Volumetric Radial Gradient (Cached)
         ctx.beginPath();
         ctx.moveTo(14, 0);
         ctx.lineTo(2, 13);
@@ -1727,11 +1757,7 @@
         if (hitFlash > 0) {
           ctx.fillStyle = '#ffffff';
         } else {
-          const robeGrad = ctx.createRadialGradient(2, -2, 2, 0, 0, 22);
-          robeGrad.addColorStop(0, mainColor);
-          robeGrad.addColorStop(0.35, robeColor);
-          robeGrad.addColorStop(1, '#05070d');
-          ctx.fillStyle = robeGrad;
+          ctx.fillStyle = getRobeGradient(ctx, charKey, mainColor, robeColor);
         }
         ctx.fill();
         ctx.strokeStyle = mainColor;
@@ -1847,6 +1873,8 @@
           this.invulnerableTimer = 0;
           this.isDashing = false;
           this.dashTimer = 0;
+          this.dashVx = 0;
+          this.dashVy = 0;
 
           this.swordCdTime = 0;
           this.spellCdTime = 0;
@@ -1875,7 +1903,8 @@
         update(deltaTime, gameTime) {
           if (!this.isAlive) return;
 
-          this.displayHp += (this.hp - this.displayHp) * 0.15;
+          // 120Hz Framerate-independent HP Lerp
+          this.displayHp += (this.hp - this.displayHp) * (1 - Math.pow(0.85, deltaTime * 60));
 
           if (this.hitFlashTimer > 0) this.hitFlashTimer -= deltaTime;
           if (this.invulnerableTimer > 0) this.invulnerableTimer -= deltaTime;
@@ -1918,10 +1947,10 @@
           let moveX = 0;
           let moveY = 0;
 
+          // Zero-allocation: read Input.moveX and Input.moveY directly
           if (this.isPlayer) {
-            const v = Input.getMovementVector();
-            moveX = v.x;
-            moveY = v.y;
+            moveX = Input.moveX;
+            moveY = Input.moveY;
             if (moveX !== 0 || moveY !== 0) {
               this.facingAngle = Math.atan2(moveY, moveX);
             }
@@ -1934,8 +1963,11 @@
             }
           }
 
-          // FIX #7: Framerate independent knockback friction
-          if (Math.abs(this.knockbackVx) > 0.1 || Math.abs(this.knockbackVy) > 0.1) {
+          // Dash Burst Movement vs Knockback Friction vs Normal Movement
+          if (this.isDashing) {
+            this.x += this.dashVx * (deltaTime * 60);
+            this.y += this.dashVy * (deltaTime * 60);
+          } else if (Math.abs(this.knockbackVx) > 0.1 || Math.abs(this.knockbackVy) > 0.1) {
             this.x += this.knockbackVx * (deltaTime * 60);
             this.y += this.knockbackVy * (deltaTime * 60);
             const friction = Math.pow(0.9, deltaTime * 60);
@@ -1943,7 +1975,6 @@
             this.knockbackVy *= friction;
           } else {
             let finalSpeed = this.speed * speedMultiplier;
-            if (this.isDashing) finalSpeed *= 2.6;
             this.x += moveX * finalSpeed * (deltaTime * 60);
             this.y += moveY * finalSpeed * (deltaTime * 60);
           }
@@ -2072,6 +2103,8 @@
           this.isDashing = true;
           this.dashTimer = 0.2;
           this.invulnerableTimer = 0.2;
+          this.dashVx = Math.cos(this.facingAngle) * 22;
+          this.dashVy = Math.sin(this.facingAngle) * 22;
           this.effects.length = 0;
 
           spawnParticles(this.x, this.y, 10, '#10b981', 4);
@@ -2544,6 +2577,23 @@
           this.matchFinished = false;
           this.entities = [];
 
+          // PART 4: Clear Kill Feed, reset Input and Camera on restart
+          const kf = (typeof UI_ELEMENTS !== 'undefined' && UI_ELEMENTS.killFeed) || document.getElementById('kill-feed');
+          if (kf) kf.innerHTML = '';
+
+          Input.joystickX = 0;
+          Input.joystickY = 0;
+          Input.moveX = 0;
+          Input.moveY = 0;
+          Input.isHoldingSword = false;
+
+          Camera.shakeAmount = 0;
+
+          isStormTintActive = false;
+          if (typeof UI_ELEMENTS !== 'undefined' && UI_ELEMENTS.stormTint) {
+            UI_ELEMENTS.stormTint.classList.remove('active');
+          }
+
           for (let i = 0; i < projectilePool.length; i++) projectilePool[i].active = false;
           for (let i = 0; i < particlePool.length; i++) particlePool[i].active = false;
           for (let i = 0; i < damageTextPool.length; i++) damageTextPool[i].active = false;
@@ -2635,20 +2685,21 @@
             }
           }
 
+          // PART 2: 120Hz Framerate Independence for Particles & Text
           for (let i = 0; i < particlePool.length; i++) {
             const pt = particlePool[i];
             if (!pt.active) continue;
-            pt.x += pt.vx;
-            pt.y += pt.vy;
-            pt.alpha -= pt.decay;
+            pt.x += pt.vx * (deltaTime * 60);
+            pt.y += pt.vy * (deltaTime * 60);
+            pt.alpha -= pt.decay * (deltaTime * 60);
             if (pt.alpha <= 0) pt.active = false;
           }
 
           for (let i = 0; i < damageTextPool.length; i++) {
             const dt = damageTextPool[i];
             if (!dt.active) continue;
-            dt.y += dt.vy;
-            dt.alpha -= 0.025;
+            dt.y += dt.vy * (deltaTime * 60);
+            dt.alpha -= 0.025 * (deltaTime * 60);
             if (dt.alpha <= 0) dt.active = false;
           }
 
@@ -3092,6 +3143,7 @@
         },
 
         showGameOver(isWin, placement, player, goldEarned, gemsEarned, kills) {
+          this.hudContainer.style.display = 'none';
           this.gameoverScreen.classList.remove('hidden');
           const title = document.getElementById('go-result-title');
           const desc = document.getElementById('go-result-desc');
@@ -3233,6 +3285,7 @@
       }
 
       function buyFighter(charKey, goldCost, gemCost) {
+        if (PlayerData.unlockedFighters.includes(charKey)) return;
         AudioEngine.init();
         if (goldCost > 0 && PlayerData.gold < goldCost) {
           showToast(`Not enough Gold! Need ${goldCost} 🪙`, true);
@@ -3267,6 +3320,8 @@
       // ==========================================
       // UI CACHE (PART 1: Zero-DOM Thrashing in 60FPS Game Loop)
       // ==========================================
+      let isStormTintActive = false;
+
       const UI_ELEMENTS = {
         hpBar: null,
         manaBar: null,
@@ -3281,7 +3336,6 @@
         damageFlash: null,
         stormTint: null,
         artBanner: null,
-        killFeed: null,
         killFeed: null,
 
         init() {
@@ -3298,7 +3352,6 @@
           this.damageFlash = document.getElementById('damage-flash');
           this.stormTint = document.getElementById('storm-tint');
           this.artBanner = document.getElementById('art-banner');
-          this.killFeed = document.getElementById('kill-feed');
           this.killFeed = document.getElementById('kill-feed');
         }
       };
@@ -3347,13 +3400,17 @@
           UI_ELEMENTS.stormBadge.innerText = 'STORM: ' + phaseName + ' (' + nextShrink + 's)';
         }
 
-        // Screen-wide Purple Storm Tint Overlay (Active when player is outside safe zone)
+        // Screen-wide Purple Storm Tint Overlay (PART 3: Only toggle class on state change)
         if (UI_ELEMENTS.stormTint) {
           const distToStorm = Math.hypot(p.x - Game.storm.currentCenterX, p.y - Game.storm.currentCenterY);
-          if (distToStorm > Game.storm.currentRadius) {
-            UI_ELEMENTS.stormTint.classList.add('active');
-          } else {
-            UI_ELEMENTS.stormTint.classList.remove('active');
+          const shouldBeActive = distToStorm > Game.storm.currentRadius;
+          if (shouldBeActive !== isStormTintActive) {
+            isStormTintActive = shouldBeActive;
+            if (isStormTintActive) {
+              UI_ELEMENTS.stormTint.classList.add('active');
+            } else {
+              UI_ELEMENTS.stormTint.classList.remove('active');
+            }
           }
         }
 
