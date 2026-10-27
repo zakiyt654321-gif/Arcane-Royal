@@ -1309,16 +1309,16 @@
               p.height = 24;
               p.color = '#38bdf8';
             } else if (type === 'EMBER') {
-              p.radius = 12;
+              p.radius = 16;
               p.color = '#f97316';
             } else if (type === 'AQUA') {
-              p.radius = 9;
+              p.radius = 13;
               p.color = '#38bdf8';
             } else if (type === 'SHADOW') {
-              p.radius = 8;
+              p.radius = 12;
               p.color = '#c084fc';
             } else {
-              p.radius = 10;
+              p.radius = 14;
               p.color = '#ffffff';
             }
             return p;
@@ -1404,6 +1404,7 @@
         joystickX: 0,
         joystickY: 0,
         maxRange: 45,
+        isHoldingSword: false,
         buttons: { sword: false, spell: false, dash: false, art: false },
 
         init() {
@@ -1449,8 +1450,26 @@
           window.addEventListener('pointercancel', resetJoystick);
           window.addEventListener('pointerleave', resetJoystick);
 
-          // Action Buttons binding
-          this.bindButton('btn-sword', 'sword', () => Game.playerAction('sword'));
+          // Action Buttons binding (Sword has continuous hold-to-attack on mobile)
+          const swordBtn = document.getElementById('btn-sword');
+          if (swordBtn) {
+            swordBtn.addEventListener('pointerdown', (e) => {
+              e.preventDefault();
+              AudioEngine.init();
+              this.isHoldingSword = true;
+              this.buttons['sword'] = true;
+              swordBtn.classList.add('pressed');
+              Game.playerAction('sword');
+            });
+            const releaseSword = () => {
+              this.isHoldingSword = false;
+              this.buttons['sword'] = false;
+              swordBtn.classList.remove('pressed');
+            };
+            window.addEventListener('pointerup', releaseSword);
+            window.addEventListener('pointercancel', releaseSword);
+            window.addEventListener('pointerleave', releaseSword);
+          }
           this.bindButton('btn-spell', 'spell', () => Game.playerAction('spell'));
           this.bindButton('btn-dash', 'dash', () => Game.playerAction('dash'));
           this.bindButton('btn-art', 'art', () => Game.playerAction('art'));
@@ -1891,10 +1910,16 @@
 
         useSword(gameTime) {
           if (gameTime < this.swordCdTime || !this.isAlive) return false;
-          this.swordCdTime = gameTime + 0.4;
+          this.swordCdTime = gameTime + 0.25;
           this.swordActive = true;
-          this.swordTimer = 0.1;
+          this.swordTimer = 0.15;
           this.swordHitEntities.clear();
+
+          // Sword Lunge: step into the swing with forward momentum
+          const lungeForce = 4.5;
+          this.knockbackVx += Math.cos(this.facingAngle) * lungeForce;
+          this.knockbackVy += Math.sin(this.facingAngle) * lungeForce;
+
           if (this.isPlayer) AudioEngine.sfxSword();
           return true;
         }
@@ -2382,6 +2407,26 @@
       // ==========================================
       // GAME MANAGER (FIX #2: Race conditions & instant placement)
       // ==========================================
+      
+      // ==========================================
+      // MOBILE AUTO-AIM ASSIST
+      // ==========================================
+      function getNearestEnemy(entity, maxRange = 500) {
+        if (!entity || !Game.entities) return null;
+        let nearest = null;
+        let minDist = maxRange;
+        for (let i = 0; i < Game.entities.length; i++) {
+          const e = Game.entities[i];
+          if (e === entity || !e.isAlive) continue;
+          const d = Math.hypot(e.x - entity.x, e.y - entity.y);
+          if (d < minDist) {
+            minDist = d;
+            nearest = e;
+          }
+        }
+        return nearest;
+      }
+
       const Game = {
         state: "LOBBY",
         time: 0,
@@ -2434,6 +2479,11 @@
         update(deltaTime) {
           if (this.state !== "PLAYING") return;
 
+          // Mobile Hold-To-Attack for Sword
+          if (Input.isHoldingSword && this.player && this.player.isAlive) {
+            this.playerAction('sword');
+          }
+
           this.time += deltaTime;
           this.storm.update(deltaTime, this.time);
 
@@ -2460,7 +2510,7 @@
               const target = this.entities[j];
               if (!target.isAlive || target === p.owner || p.hitEntities.includes(target)) continue;
 
-              const hitDist = p.isWave ? p.radius + target.radius + 15 : p.radius + target.radius;
+              const hitDist = p.isWave ? p.radius + target.radius + 25 : p.radius + target.radius + 10;
               if (Math.hypot(target.x - p.x, target.y - p.y) < hitDist) {
                 p.hitEntities.push(target);
                 target.takeDamage(p.damage, p.owner);
@@ -2512,6 +2562,15 @@
 
         playerAction(action) {
           if (this.state !== "PLAYING" || !this.player || !this.player.isAlive) return;
+
+          // Mobile Auto-Aim: snap facingAngle toward nearest enemy within 500px for combat actions
+          if (action === 'sword' || action === 'spell' || action === 'art') {
+            const nearestEnemy = getNearestEnemy(this.player, 500);
+            if (nearestEnemy) {
+              this.player.facingAngle = Math.atan2(nearestEnemy.y - this.player.y, nearestEnemy.x - this.player.x);
+            }
+          }
+
           if (action === 'sword') this.player.useSword(this.time);
           if (action === 'spell') this.player.useSpell(this.time);
           if (action === 'dash') this.player.useDash(this.time);
@@ -3107,7 +3166,7 @@
         }
 
         // High performance cooldown overlay updates using cached element references
-        updateCooldownOverlay(UI_ELEMENTS.cdSword, p.swordCdTime, 0.4);
+        updateCooldownOverlay(UI_ELEMENTS.cdSword, p.swordCdTime, 0.25);
         updateCooldownOverlay(UI_ELEMENTS.cdSpell, p.spellCdTime, 0.8);
         updateCooldownOverlay(UI_ELEMENTS.cdDash, p.dashCdTime, 1.5);
         updateCooldownOverlay(UI_ELEMENTS.cdArt, p.artCdTime, 8.0);
