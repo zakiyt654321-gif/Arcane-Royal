@@ -196,6 +196,63 @@
         align-items: center;
         gap: 4px;
       }
+            /* Kill Feed */
+      #kill-feed {
+        position: absolute;
+        top: clamp(48px, 9vh, 60px);
+        right: clamp(10px, 3vw, 20px);
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 5px;
+        pointer-events: none;
+        z-index: 25;
+        max-width: 280px;
+      }
+      .kill-feed-item {
+        background: rgba(15, 23, 42, 0.62);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 14px;
+        padding: 4px 10px;
+        font-size: clamp(10px, 1.6vw, 12px);
+        font-weight: 700;
+        color: #f8fafc;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        white-space: nowrap;
+        animation: killFeedSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        transition: opacity 0.4s ease-out, transform 0.4s ease-out;
+      }
+      .kill-feed-item.fade-out {
+        opacity: 0;
+        transform: translateX(30px);
+      }
+      .kf-killer {
+        color: #fbbf24;
+        font-weight: 800;
+      }
+      .kf-victim {
+        color: #f87171;
+        font-weight: 700;
+      }
+      .kf-storm {
+        color: #c084fc;
+        font-weight: 800;
+      }
+      @keyframes killFeedSlideIn {
+        from {
+          opacity: 0;
+          transform: translateX(45px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
       .storm-badge {
         background: rgba(76, 29, 149, 0.88);
         border: 1px solid #c084fc;
@@ -811,6 +868,7 @@
           </div>
         </div>
 
+        <div id="kill-feed"></div>
         <div id="art-banner">CRIMSON CLEAVE!</div>
 
         <!-- Touch Controls -->
@@ -1342,6 +1400,38 @@
         });
       }
 
+            // ==========================================
+      // KILL FEED SYSTEM
+      // ==========================================
+      function addKillFeed(killerName, killerChar, victimName, victimChar) {
+        const feed = (typeof UI_ELEMENTS !== 'undefined' && UI_ELEMENTS.killFeed) || document.getElementById('kill-feed');
+        if (!feed) return;
+        const item = document.createElement('div');
+        item.className = 'kill-feed-item';
+        
+        const killerLabel = killerChar ? (killerChar + ' (' + killerName + ')') : killerName;
+        const victimLabel = victimChar ? (victimChar + ' (' + victimName + ')') : victimName;
+        
+        if (killerName === 'The Storm') {
+          item.innerHTML = '<span class="kf-storm">The Storm</span> ⚡ <span class="kf-victim">' + victimLabel + '</span>';
+        } else {
+          item.innerHTML = '<span class="kf-killer">' + killerLabel + '</span> ⚔️ <span class="kf-victim">' + victimLabel + '</span>';
+        }
+        
+        feed.appendChild(item);
+        
+        while (feed.children.length > 5) {
+          feed.removeChild(feed.firstChild);
+        }
+        
+        setTimeout(() => {
+          item.classList.add('fade-out');
+          setTimeout(() => {
+            if (item.parentNode) item.parentNode.removeChild(item);
+          }, 450);
+        }, 3600);
+      }
+
       function spawnParticles(x, y, count, color, speed = 3, decay = 0.04) {
         let spawned = 0;
         for (let i = 0; i < particlePool.length && spawned < count; i++) {
@@ -1354,7 +1444,7 @@
             const spd = (Math.random() * 0.7 + 0.3) * speed;
             pt.vx = Math.cos(a) * spd;
             pt.vy = Math.sin(a) * spd;
-            pt.radius = Math.random() * 3.5 + 2;
+            pt.radius = Math.random() * 4.0 + 3.0;
             pt.color = color;
             pt.alpha = 1.0;
             pt.decay = decay;
@@ -1897,6 +1987,17 @@
 
           if (killer && killer.kills !== undefined) {
             killer.kills++;
+          }
+
+          // PART 1: Kill Feed Notification
+          try {
+            const kName = killer ? (killer.isPlayer ? "Player" : killer.name) : "The Storm";
+            const kChar = killer ? ((killer.data && killer.data.name) ? killer.data.name.replace(/^The\s+/, '') : (killer.isPlayer ? "Player" : "")) : "";
+            const vName = this.isPlayer ? "Player" : this.name;
+            const vChar = (this.data && this.data.name) ? this.data.name.replace(/^The\s+/, '') : (this.isPlayer ? "Player" : "");
+            addKillFeed(kName, kChar, vName, vChar);
+          } catch (e) {
+            console.error("KillFeed error:", e);
           }
 
           // FIX #2: Immediate death processing without race conditions
@@ -2805,23 +2906,26 @@
           CTX.restore();
         }
 
-        // LAYER 3: Wizard Sprites (FIX #5: In-place sort, zero array allocation)
-        Game.entities.sort((a, b) => a.y - b.y);
-        for (let i = 0; i < Game.entities.length; i++) {
-          Game.entities[i].draw(CTX);
-        }
-
-        // LAYER 4: Particle Effects
+        // LAYER 3: Particle Effects (Drawn underneath wizards; scale-down as alpha fades)
         for (let i = 0; i < particlePool.length; i++) {
           const pt = particlePool[i];
           if (!pt.active) continue;
           CTX.save();
-          CTX.globalAlpha = Math.max(0, pt.alpha);
+          const curAlpha = Math.max(0, pt.alpha);
+          CTX.globalAlpha = curAlpha;
           CTX.fillStyle = pt.color;
+          // Scale-down effect: particles start big and get smaller as alpha fades
+          const drawRadius = Math.max(0.6, pt.radius * (0.35 + 0.65 * curAlpha));
           CTX.beginPath();
-          CTX.arc(pt.x, pt.y, pt.radius, 0, Math.PI * 2);
+          CTX.arc(pt.x, pt.y, drawRadius, 0, Math.PI * 2);
           CTX.fill();
           CTX.restore();
+        }
+
+        // LAYER 4: Wizard Sprites (FIX #5: In-place sort, zero array allocation)
+        Game.entities.sort((a, b) => a.y - b.y);
+        for (let i = 0; i < Game.entities.length; i++) {
+          Game.entities[i].draw(CTX);
         }
 
         // LAYER 5: Floating Damage Numbers
@@ -2840,6 +2944,90 @@
         }
 
         Camera.restore(CTX);
+
+        // ==========================================
+        // PART 3: MINIMAP (Screen-space Canvas HUD)
+        // ==========================================
+        if (Game.state === "PLAYING") {
+          const mapSize = Math.min(110, Math.floor(CANVAS.height * 0.28));
+          const mapX = 14;
+          // Positioned above the virtual joystick in bottom-left area
+          const mapY = Math.max(70, CANVAS.height - 145 - mapSize);
+          
+          CTX.save();
+          CTX.globalAlpha = 0.65;
+          
+          // Dark background square with glassmorphism feel
+          CTX.fillStyle = 'rgba(15, 23, 42, 0.75)';
+          CTX.fillRect(mapX, mapY, mapSize, mapSize);
+          
+          // Neon purple border
+          CTX.strokeStyle = '#a855f7';
+          CTX.lineWidth = 1.5;
+          CTX.shadowColor = '#a855f7';
+          CTX.shadowBlur = 6;
+          CTX.strokeRect(mapX, mapY, mapSize, mapSize);
+          CTX.shadowBlur = 0;
+          
+          // Clip strictly inside minimap boundaries
+          CTX.beginPath();
+          CTX.rect(mapX, mapY, mapSize, mapSize);
+          CTX.clip();
+
+          const scale = mapSize / ARENA_WIDTH;
+
+          // Subtle coordinate grid
+          CTX.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+          CTX.lineWidth = 0.5;
+          CTX.beginPath();
+          const step = mapSize / 3;
+          for (let s = 1; s < 3; s++) {
+            CTX.moveTo(mapX + s * step, mapY);
+            CTX.lineTo(mapX + s * step, mapY + mapSize);
+            CTX.moveTo(mapX, mapY + s * step);
+            CTX.lineTo(mapX + mapSize, mapY + s * step);
+          }
+          CTX.stroke();
+
+          // Storm safe zone (purple circle)
+          if (Game.storm) {
+            const stormX = mapX + Game.storm.currentCenterX * scale;
+            const stormY = mapY + Game.storm.currentCenterY * scale;
+            const stormR = Math.max(0, Game.storm.currentRadius * scale);
+            
+            CTX.beginPath();
+            CTX.arc(stormX, stormY, stormR, 0, Math.PI * 2);
+            CTX.strokeStyle = '#c084fc';
+            CTX.lineWidth = 1.5;
+            CTX.stroke();
+            
+            CTX.fillStyle = 'rgba(168, 85, 247, 0.12)';
+            CTX.fill();
+          }
+
+          // Entities: Living Bots (Red dots) & Player (Gold dot)
+          for (let i = 0; i < Game.entities.length; i++) {
+            const ent = Game.entities[i];
+            if (!ent.isAlive) continue;
+            const ex = mapX + ent.x * scale;
+            const ey = mapY + ent.y * scale;
+            CTX.beginPath();
+            if (ent.isPlayer) {
+              CTX.arc(ex, ey, 3.2, 0, Math.PI * 2);
+              CTX.fillStyle = '#fbbf24';
+              CTX.fill();
+              CTX.strokeStyle = '#ffffff';
+              CTX.lineWidth = 1;
+              CTX.stroke();
+            } else {
+              CTX.arc(ex, ey, 2.2, 0, Math.PI * 2);
+              CTX.fillStyle = '#ef4444';
+              CTX.fill();
+            }
+          }
+
+          CTX.restore();
+        }
       }
 
       // ==========================================
@@ -3093,6 +3281,8 @@
         damageFlash: null,
         stormTint: null,
         artBanner: null,
+        killFeed: null,
+        killFeed: null,
 
         init() {
           this.hpBar = document.getElementById('hp-bar-fill');
@@ -3108,6 +3298,8 @@
           this.damageFlash = document.getElementById('damage-flash');
           this.stormTint = document.getElementById('storm-tint');
           this.artBanner = document.getElementById('art-banner');
+          this.killFeed = document.getElementById('kill-feed');
+          this.killFeed = document.getElementById('kill-feed');
         }
       };
 
