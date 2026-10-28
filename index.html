@@ -1202,22 +1202,30 @@
         }
       };
 
-      // Toast UI Helper
+      // Toast UI Helper (FIX 6: Timer clearTimeout)
+      let toastTimer = null;
       function showToast(text, isError = true) {
         const el = document.getElementById('toast-msg');
         if (!el) return;
+        if (toastTimer) clearTimeout(toastTimer);
         el.innerText = text;
         el.style.borderColor = isError ? '#ef4444' : '#22c55e';
         el.style.color = isError ? '#fca5a5' : '#86efac';
         el.classList.add('show');
-        setTimeout(() => el.classList.remove('show'), 2000);
+        toastTimer = setTimeout(() => {
+          el.classList.remove('show');
+          toastTimer = null;
+        }, 2000);
       }
 
       // 1-Tap Offline HTML File Exporter for Mobile
       function exportGameFile() {
         AudioEngine.init();
         try {
-          const htmlContent = "<!doctype html>\n" + document.documentElement.outerHTML;
+          const clone = document.documentElement.cloneNode(true);
+          clone.querySelectorAll('script[src*="vite"], script[src*="_aistudio"], script[src*="html2canvas"]').forEach(el => el.remove());
+          clone.querySelectorAll('style').forEach(style => { if (style.textContent.includes('aistudio-')) style.remove(); });
+          const htmlContent = "<!doctype html>\n" + clone.outerHTML;
           const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -1691,18 +1699,118 @@
       }
 
       // ==========================================
-      // TOP-DOWN WIZARD SPRITE RENDERING
+      // PRE-RENDERED WIZARD SPRITE CACHE (FIX 4)
       // ==========================================
-      const GRADIENT_CACHE = {};
-      function getRobeGradient(ctx, charKey, mainColor, robeColor) {
-        if (!GRADIENT_CACHE[charKey]) {
-          const robeGrad = ctx.createRadialGradient(2, -2, 2, 0, 0, 22);
+      const SPRITE_CACHE = {};
+      const SPRITE_SIZE = 96;
+
+      function getCachedSprite(charKey, isPlayer, hitFlash) {
+        const flashKey = hitFlash > 0 ? 1 : 0;
+        const key = `${charKey}_${isPlayer ? 'p' : 'b'}_${flashKey}`;
+        if (SPRITE_CACHE[key]) return SPRITE_CACHE[key];
+
+        const off = document.createElement('canvas');
+        off.width = SPRITE_SIZE;
+        off.height = SPRITE_SIZE;
+        const octx = off.getContext('2d');
+
+        octx.save();
+        octx.translate(SPRITE_SIZE / 2, SPRITE_SIZE / 2);
+
+        const data = CHARACTER_DATA[charKey] || CHARACTER_DATA.BERSERKER;
+        const mainColor = flashKey ? '#ffffff' : data.color;
+        const robeColor = flashKey ? '#e2e8f0' : data.robeColor;
+
+        // Flowing Wizard Robe with Pseudo-3D Volumetric Radial Gradient
+        octx.beginPath();
+        octx.moveTo(14, 0);
+        octx.lineTo(2, 13);
+        octx.lineTo(-14, 15);
+        octx.lineTo(-18, 0);
+        octx.lineTo(-14, -15);
+        octx.lineTo(2, -13);
+        octx.closePath();
+        if (flashKey) {
+          octx.fillStyle = '#ffffff';
+        } else {
+          const robeGrad = octx.createRadialGradient(2, -2, 2, 0, 0, 22);
           robeGrad.addColorStop(0, mainColor);
           robeGrad.addColorStop(0.35, robeColor);
           robeGrad.addColorStop(1, '#05070d');
-          GRADIENT_CACHE[charKey] = robeGrad;
+          octx.fillStyle = robeGrad;
         }
-        return GRADIENT_CACHE[charKey];
+        octx.fill();
+        octx.strokeStyle = mainColor;
+        octx.lineWidth = 2.5;
+        octx.stroke();
+
+        // Inner robe fold
+        octx.beginPath();
+        octx.moveTo(12, 0);
+        octx.lineTo(-10, 0);
+        octx.strokeStyle = flashKey ? '#cbd5e1' : 'rgba(255,255,255,0.4)';
+        octx.lineWidth = 1.5;
+        octx.stroke();
+
+        // Wizard Head
+        octx.beginPath();
+        octx.arc(0, 0, 8.5, 0, Math.PI * 2);
+        octx.fillStyle = flashKey ? '#ffffff' : '#1e293b';
+        octx.fill();
+        octx.strokeStyle = mainColor;
+        octx.lineWidth = 2;
+        octx.stroke();
+
+        // Arcane Glowing Eyes
+        octx.fillStyle = isPlayer ? '#fef08a' : (charKey === 'BERSERKER' ? '#fed7aa' : (charKey === 'TIDECALLER' ? '#93c5fd' : '#e9d5ff'));
+        octx.beginPath();
+        octx.arc(4, -3, 1.5, 0, Math.PI * 2);
+        octx.arc(4, 3, 1.5, 0, Math.PI * 2);
+        octx.fill();
+
+        // Weapons
+        octx.save();
+        if (charKey === 'BERSERKER') {
+          octx.fillStyle = '#f97316';
+          octx.strokeStyle = '#ffffff';
+          octx.lineWidth = 1;
+          octx.beginPath();
+          octx.rect(4, 8, 22, 5);
+          octx.fill();
+          octx.stroke();
+          octx.fillStyle = '#78350f';
+          octx.fillRect(2, 6, 4, 9);
+        } else if (charKey === 'TIDECALLER') {
+          octx.strokeStyle = '#94a3b8';
+          octx.lineWidth = 2.5;
+          octx.beginPath();
+          octx.moveTo(2, 8);
+          octx.lineTo(24, 10);
+          octx.stroke();
+          octx.beginPath();
+          octx.arc(26, 10, 5, 0, Math.PI * 2);
+          octx.fillStyle = '#38bdf8';
+          octx.shadowColor = '#0284c7';
+          octx.shadowBlur = 10;
+          octx.fill();
+        } else {
+          octx.fillStyle = '#a855f7';
+          octx.strokeStyle = '#ffffff';
+          octx.lineWidth = 1;
+          octx.beginPath();
+          octx.moveTo(4, 8);
+          octx.lineTo(20, 11);
+          octx.lineTo(16, 7);
+          octx.closePath();
+          octx.fill();
+          octx.stroke();
+        }
+        octx.restore();
+
+        octx.restore();
+
+        SPRITE_CACHE[key] = off;
+        return off;
       }
 
       function drawWizardSprite(ctx, charKey, isPlayer, facingAngle, invuln, hitFlash, swordActive) {
@@ -1710,7 +1818,6 @@
 
         const data = CHARACTER_DATA[charKey] || CHARACTER_DATA.BERSERKER;
         const mainColor = hitFlash > 0 ? '#ffffff' : data.color;
-        const robeColor = hitFlash > 0 ? '#e2e8f0' : data.robeColor;
 
         // Soft, colored drop shadow under each wizard using shadowBlur
         ctx.save();
@@ -1745,87 +1852,9 @@
 
         ctx.rotate(facingAngle);
 
-        // Flowing Wizard Robe with Pseudo-3D Volumetric Radial Gradient (Cached)
-        ctx.beginPath();
-        ctx.moveTo(14, 0);
-        ctx.lineTo(2, 13);
-        ctx.lineTo(-14, 15);
-        ctx.lineTo(-18, 0);
-        ctx.lineTo(-14, -15);
-        ctx.lineTo(2, -13);
-        ctx.closePath();
-        if (hitFlash > 0) {
-          ctx.fillStyle = '#ffffff';
-        } else {
-          ctx.fillStyle = getRobeGradient(ctx, charKey, mainColor, robeColor);
-        }
-        ctx.fill();
-        ctx.strokeStyle = mainColor;
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-
-        // Inner robe fold
-        ctx.beginPath();
-        ctx.moveTo(12, 0);
-        ctx.lineTo(-10, 0);
-        ctx.strokeStyle = hitFlash > 0 ? '#cbd5e1' : 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-
-        // Wizard Head
-        ctx.beginPath();
-        ctx.arc(0, 0, 8.5, 0, Math.PI * 2);
-        ctx.fillStyle = hitFlash > 0 ? '#ffffff' : '#1e293b';
-        ctx.fill();
-        ctx.strokeStyle = mainColor;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Arcane Glowing Eyes
-        ctx.fillStyle = isPlayer ? '#fef08a' : (charKey === 'BERSERKER' ? '#fed7aa' : (charKey === 'TIDECALLER' ? '#93c5fd' : '#e9d5ff'));
-        ctx.beginPath();
-        ctx.arc(4, -3, 1.5, 0, Math.PI * 2);
-        ctx.arc(4, 3, 1.5, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Weapons
-        ctx.save();
-        if (charKey === 'BERSERKER') {
-          ctx.fillStyle = '#f97316';
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.rect(4, 8, 22, 5);
-          ctx.fill();
-          ctx.stroke();
-          ctx.fillStyle = '#78350f';
-          ctx.fillRect(2, 6, 4, 9);
-        } else if (charKey === 'TIDECALLER') {
-          ctx.strokeStyle = '#94a3b8';
-          ctx.lineWidth = 2.5;
-          ctx.beginPath();
-          ctx.moveTo(2, 8);
-          ctx.lineTo(24, 10);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(26, 10, 5, 0, Math.PI * 2);
-          ctx.fillStyle = '#38bdf8';
-          ctx.shadowColor = '#0284c7';
-          ctx.shadowBlur = 10;
-          ctx.fill();
-        } else {
-          ctx.fillStyle = '#a855f7';
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(4, 8);
-          ctx.lineTo(20, 11);
-          ctx.lineTo(16, 7);
-          ctx.closePath();
-          ctx.fill();
-          ctx.stroke();
-        }
-        ctx.restore();
+        // Pre-rendered sprite body from cache
+        const sprite = getCachedSprite(charKey, isPlayer, hitFlash);
+        ctx.drawImage(sprite, -SPRITE_SIZE / 2, -SPRITE_SIZE / 2);
 
         // Slash Arc
         if (swordActive) {
@@ -1875,6 +1904,8 @@
           this.dashTimer = 0;
           this.dashVx = 0;
           this.dashVy = 0;
+          this.nextDashTry = Math.random() * 2;
+          this.nextArtTry = Math.random() * 3;
 
           this.swordCdTime = 0;
           this.spellCdTime = 0;
@@ -1963,20 +1994,20 @@
             }
           }
 
-          // Dash Burst Movement vs Knockback Friction vs Normal Movement
+          // PHASE 2 - FIX 2: MERGED MOVEMENT BLOCK
           if (this.isDashing) {
             this.x += this.dashVx * (deltaTime * 60);
             this.y += this.dashVy * (deltaTime * 60);
-          } else if (Math.abs(this.knockbackVx) > 0.1 || Math.abs(this.knockbackVy) > 0.1) {
-            this.x += this.knockbackVx * (deltaTime * 60);
-            this.y += this.knockbackVy * (deltaTime * 60);
+          } else {
+            const finalSpeed = this.speed * speedMultiplier;
+            this.x += (moveX * finalSpeed + this.knockbackVx) * (deltaTime * 60);
+            this.y += (moveY * finalSpeed + this.knockbackVy) * (deltaTime * 60);
+
             const friction = Math.pow(0.9, deltaTime * 60);
             this.knockbackVx *= friction;
             this.knockbackVy *= friction;
-          } else {
-            let finalSpeed = this.speed * speedMultiplier;
-            this.x += moveX * finalSpeed * (deltaTime * 60);
-            this.y += moveY * finalSpeed * (deltaTime * 60);
+            if (Math.abs(this.knockbackVx) < 0.05) this.knockbackVx = 0;
+            if (Math.abs(this.knockbackVy) < 0.05) this.knockbackVy = 0;
           }
 
           this.x = Math.max(this.radius, Math.min(ARENA_WIDTH - this.radius, this.x));
@@ -1987,7 +2018,7 @@
           }
         }
 
-        takeDamage(amount, source = null, triggerShake = true) {
+        takeDamage(amount, source = null, triggerShake = true, shakeMagnitude = 12) {
           if (!this.isAlive || this.invulnerableTimer > 0) return;
 
           this.hp -= amount;
@@ -1996,7 +2027,7 @@
           spawnDamageText(this.x, this.y, Math.round(amount).toString(), '#fca5a5');
 
           if (this.isPlayer && triggerShake) {
-            Camera.shakeAmount = 12;
+            Camera.shakeAmount = shakeMagnitude;
             triggerScreenFlash();
             AudioEngine.sfxHit();
           } else if (source && source.isPlayer) {
@@ -2047,10 +2078,9 @@
           this.swordTimer = 0.15;
           this.swordHitEntities.clear();
 
-          // Sword Lunge: step into the swing with forward momentum
-          const lungeForce = 4.5;
-          this.knockbackVx += Math.cos(this.facingAngle) * lungeForce;
-          this.knockbackVy += Math.sin(this.facingAngle) * lungeForce;
+          // FIX 3: Direct position offset instead of knockback lunge
+          this.x += Math.cos(this.facingAngle) * 3.5;
+          this.y += Math.sin(this.facingAngle) * 3.5;
 
           if (this.isPlayer) AudioEngine.sfxSword();
           return true;
@@ -2103,8 +2133,8 @@
           this.isDashing = true;
           this.dashTimer = 0.2;
           this.invulnerableTimer = 0.2;
-          this.dashVx = Math.cos(this.facingAngle) * 22;
-          this.dashVy = Math.sin(this.facingAngle) * 22;
+          this.dashVx = Math.cos(this.facingAngle) * 13;
+          this.dashVy = Math.sin(this.facingAngle) * 13;
           this.effects.length = 0;
 
           spawnParticles(this.x, this.y, 10, '#10b981', 4);
@@ -2303,7 +2333,8 @@
                 } else {
                   steerX = Math.cos(angle);
                   steerY = Math.sin(angle);
-                  if (this.charKey === 'SHADOW' && closestDist > 200 && this.mana >= 12 && Math.random() < 0.02) {
+                  if (this.charKey === 'SHADOW' && closestDist > 200 && this.mana >= 12 && gameTime >= (this.nextDashTry || 0)) {
+                    this.nextDashTry = gameTime + 1.2 + Math.random() * 1.8;
                     this.useDash(gameTime);
                   }
                 }
@@ -2317,22 +2348,26 @@
 
                 if (closestDist < 50) {
                   this.useSword(gameTime);
-                  if (this.charKey === 'BERSERKER' && this.mana >= 45 && Math.random() < 0.05) {
+                  if (this.charKey === 'BERSERKER' && this.mana >= 45 && gameTime >= this.nextArtTry) {
+                    this.nextArtTry = gameTime + 4.0 + Math.random() * 4.0;
                     this.useArt(gameTime);
                   }
                 } else if (closestDist >= 50 && closestDist <= 150) {
                   if (this.mana > 30) {
                     this.useSpell(gameTime);
                   }
-                  if (this.charKey === 'SHADOW' && this.mana >= 45 && Math.random() < 0.04) {
+                  if (this.charKey === 'SHADOW' && this.mana >= 45 && gameTime >= this.nextArtTry) {
+                    this.nextArtTry = gameTime + 4.0 + Math.random() * 4.0;
                     this.useArt(gameTime);
                   }
-                  if (this.charKey === 'TIDECALLER' && this.mana >= 45 && Math.random() < 0.04) {
+                  if (this.charKey === 'TIDECALLER' && this.mana >= 45 && gameTime >= this.nextArtTry) {
+                    this.nextArtTry = gameTime + 4.0 + Math.random() * 4.0;
                     this.useArt(gameTime);
                   }
                 }
 
-                if (this.charKey === 'TIDECALLER' && closestDist < 50 && this.mana >= 12) {
+                if (this.charKey === 'TIDECALLER' && closestDist < 50 && this.mana >= 12 && gameTime >= (this.nextDashTry || 0)) {
+                  this.nextDashTry = gameTime + 1.2 + Math.random() * 1.8;
                   this.facingAngle = angle;
                   this.useDash(gameTime);
                   steerX = -Math.cos(angle);
@@ -2346,14 +2381,16 @@
                 const angleToSafe = Math.atan2(Game.storm.currentCenterY - this.y, Game.storm.currentCenterX - this.x);
                 steerX = Math.cos(angleToSafe);
                 steerY = Math.sin(angleToSafe);
-                if (this.mana >= 12 && Math.random() < 0.03) {
+                if (this.mana >= 12 && gameTime >= (this.nextDashTry || 0)) {
+                  this.nextDashTry = gameTime + 1.2 + Math.random() * 1.8;
                   this.useDash(gameTime);
                 }
               } else if (closestEnemy) {
                 const angleAway = Math.atan2(this.y - closestEnemy.y, this.x - closestEnemy.x);
                 steerX = Math.cos(angleAway);
                 steerY = Math.sin(angleAway);
-                if (this.mana >= 12 && Math.random() < 0.03) {
+                if (this.mana >= 12 && gameTime >= (this.nextDashTry || 0)) {
+                  this.nextDashTry = gameTime + 1.2 + Math.random() * 1.8;
                   this.useDash(gameTime);
                 }
               }
@@ -2367,7 +2404,8 @@
               const pdx = proj.x - this.x;
               const pdy = proj.y - this.y;
               const pdist = Math.hypot(pdx, pdy);
-              if (pdist < 120 && this.mana >= 12 && Math.random() < 0.08) {
+              if (pdist < 120 && this.mana >= 12 && gameTime >= (this.nextDashTry || 0) && Math.random() < 0.08) {
+                this.nextDashTry = gameTime + 1.2 + Math.random() * 1.8;
                 const dodgeAngle = Math.atan2(proj.vy, proj.vx) + Math.PI / 2;
                 steerX += Math.cos(dodgeAngle) * 1.5;
                 steerY += Math.sin(dodgeAngle) * 1.5;
@@ -2493,13 +2531,14 @@
           this.damageTimer += deltaTime;
           if (this.damageTimer >= 1.0) {
             this.damageTimer = 0;
+            const damagePerTick = 5 + Math.max(0, matchTime - 150) * 0.35;
             for (let i = 0; i < Game.entities.length; i++) {
               const e = Game.entities[i];
               if (!e.isAlive) continue;
               const d = Math.hypot(e.x - this.currentCenterX, e.y - this.currentCenterY);
               if (d > this.currentRadius) {
-                e.takeDamage(5, null, true);
-                spawnDamageText(e.x, e.y, "STORM -5", "#c084fc");
+                e.takeDamage(damagePerTick, null, true, 3);
+                spawnDamageText(e.x, e.y, `STORM -${Math.round(damagePerTick)}`, "#c084fc");
               }
             }
           }
@@ -2561,6 +2600,8 @@
         return nearest;
       }
 
+      let lastHudUpdate = 0;
+
       const Game = {
         state: "LOBBY",
         time: 0,
@@ -2577,7 +2618,7 @@
           this.matchFinished = false;
           this.entities = [];
 
-          // PART 4: Clear Kill Feed, reset Input and Camera on restart
+          // PART 4 - FIX 7: Clear Kill Feed, reset Input, action button styles, and Camera on restart
           const kf = (typeof UI_ELEMENTS !== 'undefined' && UI_ELEMENTS.killFeed) || document.getElementById('kill-feed');
           if (kf) kf.innerHTML = '';
 
@@ -2586,8 +2627,19 @@
           Input.moveX = 0;
           Input.moveY = 0;
           Input.isHoldingSword = false;
+          Input.swordPointerId = null;
+          Input.buttonPointerIds = {};
+          Input.buttons = { sword: false, spell: false, dash: false, art: false };
+          const actionBtns = ['btn-sword', 'btn-spell', 'btn-dash', 'btn-art'];
+          actionBtns.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) btn.classList.remove('pressed');
+          });
+          const stick = document.getElementById('joystick-stick');
+          if (stick) stick.style.transform = 'translate(0px, 0px)';
 
           Camera.shakeAmount = 0;
+          lastHudUpdate = 0;
 
           isStormTintActive = false;
           if (typeof UI_ELEMENTS !== 'undefined' && UI_ELEMENTS.stormTint) {
@@ -2709,15 +2761,24 @@
             Camera.update(this.storm.currentCenterX, this.storm.currentCenterY, deltaTime);
           }
 
-          updateHUD();
+          // FIX 5: Throttled HUD update (10Hz)
+          if (this.time - lastHudUpdate >= 0.1) {
+            lastHudUpdate = this.time;
+            updateHUD();
+          }
         },
 
         playerAction(action) {
           if (this.state !== "PLAYING" || !this.player || !this.player.isAlive) return;
 
-          // Mobile Auto-Aim: snap facingAngle toward nearest enemy within 500px for combat actions
-          if (action === 'sword' || action === 'spell' || action === 'art') {
-            const nearestEnemy = getNearestEnemy(this.player, 500);
+          // FIX 8: Dynamic Auto-Aim Range (Sword: 130, Spell: spellMaxRange, Art: 180)
+          let autoAimRange = 0;
+          if (action === 'sword') autoAimRange = 130;
+          else if (action === 'spell') autoAimRange = (this.player.data && this.player.data.spellMaxRange) || 500;
+          else if (action === 'art') autoAimRange = 180;
+
+          if (autoAimRange > 0) {
+            const nearestEnemy = getNearestEnemy(this.player, autoAimRange);
             if (nearestEnemy) {
               this.player.facingAngle = Math.atan2(nearestEnemy.y - this.player.y, nearestEnemy.x - this.player.x);
             }
@@ -3397,7 +3458,7 @@
             nextShrink = 0;
             phaseName = "SUDDEN DEATH!";
           }
-          UI_ELEMENTS.stormBadge.innerText = 'STORM: ' + phaseName + ' (' + nextShrink + 's)';
+          UI_ELEMENTS.stormBadge.innerText = nextShrink > 0 ? 'STORM: ' + phaseName + ' (' + nextShrink + 's)' : 'STORM: ' + phaseName;
         }
 
         // Screen-wide Purple Storm Tint Overlay (PART 3: Only toggle class on state change)
@@ -3426,31 +3487,53 @@
         const remaining = targetTime - Game.time;
         if (remaining > 0) {
           const frac = remaining / totalDuration;
-          el.style.opacity = '1';
-          el.style.background = 'conic-gradient(rgba(15,23,42,0.85) ' + (frac * 360) + 'deg, transparent 0deg)';
+          const deg = Math.round((frac * 360) / 6) * 6;
+          if (el._lastDeg !== deg) {
+            el._lastDeg = deg;
+            el.style.opacity = '1';
+            el.style.background = 'conic-gradient(rgba(15,23,42,0.85) ' + deg + 'deg, transparent 0deg)';
+          }
         } else {
-          el.style.opacity = '0';
+          if (el._lastDeg !== -1) {
+            el._lastDeg = -1;
+            el.style.opacity = '0';
+          }
         }
       }
 
+      const buzzTimers = {};
       function buzzButton(btnId) {
         const btn = document.getElementById(btnId);
         if (!btn) return;
+        if (buzzTimers[btnId]) clearTimeout(buzzTimers[btnId]);
         btn.classList.add('buzz');
-        setTimeout(() => btn.classList.remove('buzz'), 250);
+        buzzTimers[btnId] = setTimeout(() => {
+          btn.classList.remove('buzz');
+          delete buzzTimers[btnId];
+        }, 250);
       }
 
+      let flashTimer = null;
       function triggerScreenFlash() {
         if (!UI_ELEMENTS.damageFlash) return;
+        if (flashTimer) clearTimeout(flashTimer);
         UI_ELEMENTS.damageFlash.classList.add('active');
-        setTimeout(() => UI_ELEMENTS.damageFlash.classList.remove('active'), 180);
+        flashTimer = setTimeout(() => {
+          if (UI_ELEMENTS.damageFlash) UI_ELEMENTS.damageFlash.classList.remove('active');
+          flashTimer = null;
+        }, 180);
       }
 
+      let artBannerTimer = null;
       function showArtBanner(text) {
         if (!UI_ELEMENTS.artBanner) return;
+        if (artBannerTimer) clearTimeout(artBannerTimer);
         UI_ELEMENTS.artBanner.innerText = text;
         UI_ELEMENTS.artBanner.classList.add('show');
-        setTimeout(() => UI_ELEMENTS.artBanner.classList.remove('show'), 900);
+        artBannerTimer = setTimeout(() => {
+          if (UI_ELEMENTS.artBanner) UI_ELEMENTS.artBanner.classList.remove('show');
+          artBannerTimer = null;
+        }, 900);
       }
 
       // Initialize persistent data, controls and start loop
