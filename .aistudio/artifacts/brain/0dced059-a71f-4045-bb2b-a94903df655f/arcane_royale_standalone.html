@@ -152,7 +152,7 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
-        min-width: clamp(140px, 24vw, 200px);
+        min-width: clamp(160px, 28vw, 220px);
         max-width: 210px;
         box-shadow: 0 4px 14px rgba(0,0,0,0.4);
       }
@@ -164,7 +164,7 @@
       .bar-label {
         display: flex;
         justify-content: space-between;
-        font-size: 10px;
+        font-size: 12px;
         font-weight: 700;
         letter-spacing: 0.5px;
         text-transform: uppercase;
@@ -264,6 +264,25 @@
         text-shadow: 0 1px 3px rgba(0,0,0,0.6);
         box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
         white-space: nowrap;
+        transition: border-color 0.2s, background-color 0.2s;
+      }
+      .storm-badge.warning-pulse {
+        border-color: #ef4444 !important;
+        background: rgba(185, 28, 28, 0.92) !important;
+        color: #fee2e2 !important;
+        animation: stormWarningPulse 0.5s infinite alternate ease-in-out;
+      }
+      @keyframes stormWarningPulse {
+        0% {
+          transform: scale(1);
+          box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+          border-color: #f87171;
+        }
+        100% {
+          transform: scale(1.08);
+          box-shadow: 0 0 22px rgba(239, 68, 68, 1);
+          border-color: #ef4444;
+        }
       }
       .alive-badge {
         background: rgba(15, 23, 42, 0.88);
@@ -372,12 +391,12 @@
         80% { transform: translate(3px, 1px); }
       }
       .btn-name {
-        font-size: 11px;
+        font-size: 13px;
         letter-spacing: 0.5px;
         text-transform: uppercase;
       }
       .btn-sub {
-        font-size: 8px;
+        font-size: 10px;
         opacity: 0.85;
       }
 
@@ -502,6 +521,58 @@
       }
       .gold-pill { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
       .gem-pill { color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); }
+      .lvl-pill {
+        color: #a855f7;
+        border-color: rgba(168, 85, 247, 0.4);
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 4px 10px;
+        gap: 3px;
+      }
+      .lvl-pill-top {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+      }
+      .xp-track {
+        width: 64px;
+        height: 4px;
+        background: rgba(0, 0, 0, 0.6);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .xp-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #a855f7, #ec4899);
+        border-radius: 2px;
+        transition: width 0.3s ease;
+      }
+      .btn-operator {
+        background: rgba(15, 23, 42, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #94a3b8;
+        border-radius: 50%;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .btn-operator:hover {
+        color: #f1f5f9;
+        border-color: #a855f7;
+        box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+      }
+      .btn-operator:active {
+        transform: scale(0.92);
+      }
 
       /* LOBBY UI */
       #lobby-screen .lobby-center {
@@ -904,14 +975,33 @@
         </div>
       </div>
 
+      <!-- OPERATOR ACCESS MODAL -->
+      <div id="operator-modal" class="overlay-screen hidden" style="z-index: 200; background: rgba(0,0,0,0.85);">
+        <div class="gameover-box" style="max-width: 320px; padding: 20px;">
+          <h2 style="color: #a855f7; margin-bottom: 10px; font-weight: 900;">OPERATOR ACCESS</h2>
+          <input type="password" id="operator-input" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #a855f7; background: rgba(15,23,42,0.8); color: white; text-align: center; font-weight: bold;" placeholder="ENTER KEY...">
+          <div style="display: flex; gap: 10px; width: 100%;">
+            <button class="btn-lobby-sec" onclick="closeOperatorModal()" style="flex: 1; justify-content: center;">CANCEL</button>
+            <button class="btn-lobby-main" onclick="submitOperatorKey()" style="flex: 1; padding: 10px; font-size: 14px;">VERIFY</button>
+          </div>
+        </div>
+      </div>
+
       <!-- LOBBY SCREEN -->
       <div id="lobby-screen" class="overlay-screen">
         <div class="currency-bar">
           <div class="wallet-group">
             <div class="currency-pill gold-pill">🪙 <span id="lobby-gold">0</span></div>
             <div class="currency-pill gem-pill">💎 <span id="lobby-gems">0</span></div>
+            <div class="currency-pill lvl-pill" title="Player Level & Arcane Progression">
+              <div class="lvl-pill-top">⭐ <span id="lobby-level">LVL 1</span> <span id="lobby-xp-text" style="font-size: 9px; color: #cbd5e1; font-weight: 600;">0/100 XP</span></div>
+              <div class="xp-track"><div id="lobby-xp-fill" class="xp-fill"></div></div>
+            </div>
           </div>
-          <button class="btn-lobby-sec" onclick="openShop('gems')" style="padding: 4px 12px; font-size: 11px;">💎 Vault</button>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn-lobby-sec" onclick="openShop('gems')" style="padding: 4px 12px; font-size: 11px;">💎 Vault</button>
+            <button id="btn-operator" class="btn-operator" onclick="triggerOperatorAccess()" title="Operator Key">⚙️</button>
+          </div>
         </div>
 
         <div class="lobby-center">
@@ -1072,8 +1162,10 @@
       // ==========================================
       const STORAGE_KEY = 'arcane_royale_save_v2';
       const PlayerData = {
-        gold: 150,
-        gems: 10,
+        gold: 500,
+        gems: 50,
+        xp: 0,
+        level: 1,
         selectedFighter: 'BERSERKER',
         unlockedFighters: ['BERSERKER'],
         totalMatches: 0,
@@ -1091,6 +1183,8 @@
           if (!this.unlockedFighters.includes('BERSERKER')) {
             this.unlockedFighters.push('BERSERKER');
           }
+          if (typeof this.level !== 'number' || this.level < 1) this.level = 1;
+          if (typeof this.xp !== 'number' || this.xp < 0) this.xp = 0;
           this.save();
         },
 
@@ -1099,6 +1193,8 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
               gold: this.gold,
               gems: this.gems,
+              xp: this.xp,
+              level: this.level,
               selectedFighter: this.selectedFighter,
               unlockedFighters: this.unlockedFighters,
               totalMatches: this.totalMatches,
@@ -1109,6 +1205,34 @@
           updateCurrencyUI();
         }
       };
+
+      // THE OPERATOR KEY (Admin Cheat Menu)
+      function triggerOperatorAccess() {
+        AudioEngine.init();
+        document.getElementById('operator-input').value = '';
+        document.getElementById('operator-modal').classList.remove('hidden');
+      }
+
+      function closeOperatorModal() {
+        document.getElementById('operator-modal').classList.add('hidden');
+      }
+
+      function submitOperatorKey() {
+        const pass = document.getElementById('operator-input').value;
+        if (pass === "ALPHA3026") {
+          PlayerData.gold = 99999;
+          PlayerData.gems = 9999;
+          PlayerData.unlockedFighters = ['BERSERKER', 'TIDECALLER', 'SHADOW'];
+          PlayerData.save();
+          if (typeof renderShopCards === 'function') renderShopCards();
+          AudioEngine.sfxPurchase();
+          closeOperatorModal();
+          showToast("✓ Operator Access Granted", false);
+        } else {
+          showToast("Access Denied", true);
+          AudioEngine.sfxOutOfMana();
+        }
+      }
 
       // Audio Engine (Web Audio API)
       const AudioEngine = {
@@ -1199,6 +1323,9 @@
         },
         sfxDefeat() {
           this.playTone(280, 'sawtooth', 0.4, 0.3, 90);
+        },
+        sfxWarning() {
+          this.playTone(880, 'sine', 0.12, 0.28, 660);
         }
       };
 
@@ -1209,8 +1336,13 @@
         if (!el) return;
         if (toastTimer) clearTimeout(toastTimer);
         el.innerText = text;
-        el.style.borderColor = isError ? '#ef4444' : '#22c55e';
-        el.style.color = isError ? '#fca5a5' : '#86efac';
+        if (typeof isError === 'string') {
+          el.style.borderColor = isError;
+          el.style.color = isError;
+        } else {
+          el.style.borderColor = isError ? '#ef4444' : '#22c55e';
+          el.style.color = isError ? '#fca5a5' : '#86efac';
+        }
         el.classList.add('show');
         toastTimer = setTimeout(() => {
           el.classList.remove('show');
@@ -2640,6 +2772,7 @@
 
           Camera.shakeAmount = 0;
           lastHudUpdate = 0;
+          lastWarningBeepSec = -1;
 
           isStormTintActive = false;
           if (typeof UI_ELEMENTS !== 'undefined' && UI_ELEMENTS.stormTint) {
@@ -2817,20 +2950,25 @@
           let earnedGold = 0;
           let earnedGems = 0;
 
-          if (placement === 1) {
-            earnedGold += 50;
-            earnedGems += 5;
-          } else if (placement === 2) {
-            earnedGold += 30;
-            earnedGems += 2;
-          } else if (placement === 3) {
-            earnedGold += 20;
-            earnedGems += 1;
-          } else {
-            earnedGold += 10;
-          }
+          if (placement === 1) { earnedGold += 100; earnedGems += 5; }
+          else if (placement === 2) { earnedGold += 60; earnedGems += 2; }
+          else if (placement === 3) { earnedGold += 40; earnedGems += 1; }
+          else { earnedGold += 20; }
 
           earnedGold += kills * 10;
+
+          // XP / Level System
+          const earnedXp = isVictory ? 50 : 20;
+          PlayerData.xp = (PlayerData.xp || 0) + earnedXp;
+          let levelUpBonusGold = 0;
+          let didLevelUp = false;
+          while (PlayerData.xp >= (PlayerData.level || 1) * 100) {
+            PlayerData.xp -= (PlayerData.level || 1) * 100;
+            PlayerData.level = (PlayerData.level || 1) + 1;
+            levelUpBonusGold += 50;
+            didLevelUp = true;
+          }
+          earnedGold += levelUpBonusGold;
 
           PlayerData.gold += earnedGold;
           PlayerData.gems += earnedGems;
@@ -2839,7 +2977,7 @@
           PlayerData.totalKills += kills;
           PlayerData.save();
 
-          UIController.showGameOver(isVictory, placement, this.player, earnedGold, earnedGems, kills);
+          UIController.showGameOver(isVictory, placement, this.player, earnedGold, earnedGems, kills, earnedXp, didLevelUp);
         }
       };
 
@@ -3117,7 +3255,7 @@
             CTX.fill();
           }
 
-          // Entities: Living Bots (Red dots) & Player (Gold dot)
+          // Entities: Distinct Class Icons for Bots & Gold Circle for Player
           for (let i = 0; i < Game.entities.length; i++) {
             const ent = Game.entities[i];
             if (!ent.isAlive) continue;
@@ -3131,9 +3269,22 @@
               CTX.strokeStyle = '#ffffff';
               CTX.lineWidth = 1;
               CTX.stroke();
-            } else {
-              CTX.arc(ex, ey, 2.2, 0, Math.PI * 2);
+            } else if (ent.charKey === 'BERSERKER') {
+              const r = 3.2;
+              CTX.moveTo(ex, ey - r);
+              CTX.lineTo(ex + r * 0.9, ey + r * 0.8);
+              CTX.lineTo(ex - r * 0.9, ey + r * 0.8);
+              CTX.closePath();
               CTX.fillStyle = '#ef4444';
+              CTX.fill();
+            } else if (ent.charKey === 'TIDECALLER') {
+              const s = 2.4;
+              CTX.rect(ex - s, ey - s, s * 2, s * 2);
+              CTX.fillStyle = '#38bdf8';
+              CTX.fill();
+            } else {
+              CTX.arc(ex, ey, 2.6, 0, Math.PI * 2);
+              CTX.fillStyle = '#c084fc';
               CTX.fill();
             }
           }
@@ -3203,7 +3354,7 @@
           this.hudContainer.style.display = 'block';
         },
 
-        showGameOver(isWin, placement, player, goldEarned, gemsEarned, kills) {
+        showGameOver(isWin, placement, player, goldEarned, gemsEarned, kills, xpEarned = 0, isLevelUp = false) {
           this.hudContainer.style.display = 'none';
           this.gameoverScreen.classList.remove('hidden');
           const title = document.getElementById('go-result-title');
@@ -3221,7 +3372,7 @@
           document.getElementById('rw-gold').innerText = `+${goldEarned} 🪙`;
           document.getElementById('rw-gems').innerText = `+${gemsEarned} 💎`;
           document.getElementById('rw-breakdown-placement').innerText = `Placement: #${placement}`;
-          document.getElementById('rw-breakdown-kills').innerText = `Kills: ${kills}`;
+          document.getElementById('rw-breakdown-kills').innerText = `Kills: ${kills} | +${xpEarned} XP${isLevelUp ? ' ⭐ LEVEL UP!' : ''}`;
 
           document.getElementById('stat-placement').innerText = `#${placement} / 8`;
           document.getElementById('stat-fighter').innerText = player ? player.data.name : "Champion";
@@ -3245,6 +3396,18 @@
           const el = document.getElementById(id);
           if (el) el.innerText = PlayerData.gems;
         });
+
+        const lvlEl = document.getElementById('lobby-level');
+        if (lvlEl) lvlEl.innerText = 'LVL ' + (PlayerData.level || 1);
+        const reqXp = (PlayerData.level || 1) * 100;
+        const curXp = PlayerData.xp || 0;
+        const xpText = document.getElementById('lobby-xp-text');
+        if (xpText) xpText.innerText = `${curXp}/${reqXp} XP`;
+        const xpFill = document.getElementById('lobby-xp-fill');
+        if (xpFill) {
+          const pct = Math.min(100, Math.max(0, (curXp / reqXp) * 100));
+          xpFill.style.width = pct + '%';
+        }
       }
 
       function updateLobbyShowcase() {
@@ -3417,6 +3580,8 @@
         }
       };
 
+      let lastWarningBeepSec = -1;
+
       function updateHUD() {
         if (!Game.player) return;
 
@@ -3459,6 +3624,21 @@
             phaseName = "SUDDEN DEATH!";
           }
           UI_ELEMENTS.stormBadge.innerText = nextShrink > 0 ? 'STORM: ' + phaseName + ' (' + nextShrink + 's)' : 'STORM: ' + phaseName;
+
+          // DYNAMIC STORM WARNINGS: Warning pulse & per-second beep during final 5 seconds before shrink
+          const isWarning = nextShrink <= 5 && nextShrink > 0 && !phaseName.includes('SHRINKING') && phaseName !== 'SUDDEN DEATH!';
+          if (isWarning) {
+            UI_ELEMENTS.stormBadge.classList.add('warning-pulse');
+            if (lastWarningBeepSec !== nextShrink) {
+              lastWarningBeepSec = nextShrink;
+              AudioEngine.sfxWarning();
+            }
+          } else {
+            UI_ELEMENTS.stormBadge.classList.remove('warning-pulse');
+            if (nextShrink > 5) {
+              lastWarningBeepSec = -1;
+            }
+          }
         }
 
         // Screen-wide Purple Storm Tint Overlay (PART 3: Only toggle class on state change)
