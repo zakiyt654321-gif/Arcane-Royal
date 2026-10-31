@@ -936,11 +936,13 @@
           <div style="min-width: 80px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
             <div id="fps-counter" style="font-size: 11px; font-weight: 700; color: #64748b;">60 FPS</div>
             <button id="btn-zoom-toggle" class="interactive" onclick="toggleZoom()" style="background: rgba(30,41,59,0.9); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; padding: 3px 8px; font-size: 10px; color: #cbd5e1; font-weight: 700; cursor: pointer; white-space: nowrap;">🔍 Zoom: Auto</button>
+            <button id="btn-expand-map" class="interactive" onclick="toggleMapExpand()" style="background: rgba(30,41,59,0.9); border: 1px solid rgba(255,255,255,0.25); border-radius: 6px; padding: 3px 8px; font-size: 10px; color: #cbd5e1; font-weight: 700; cursor: pointer; white-space: nowrap; margin-top: 4px;">🗺️ Expand</button>
           </div>
         </div>
 
         <div id="kill-feed"></div>
         <div id="art-banner">CRIMSON CLEAVE!</div>
+        <div id="killstreak-banner" style="position:absolute; top: 35%; left: 50%; transform: translate(-50%, -50%); font-size: 30px; font-weight: 900; color: #fbbf24; text-shadow: 0 0 20px #f59e0b; opacity: 0; transition: all 0.3s ease; pointer-events: none; z-index: 100;">KILL STREAK!</div>
 
         <!-- Touch Controls -->
         <div id="joystick-zone">
@@ -985,11 +987,25 @@
         <button id="btn-confirm-drop" class="btn-lobby-main" onclick="confirmDrop()" style="margin-top: 20px; opacity: 0.5; pointer-events: none;">LAUNCH</button>
       </div>
 
+      <!-- LOGIN / ENTER NAME SCREEN -->
+      <div id="login-screen" class="overlay-screen">
+        <div class="lobby-title-card" style="margin-bottom: 25px;">
+          <h1 class="lobby-game-title">ARCANE ROYALE</h1>
+          <p class="lobby-tagline">SURVIVE &bull; CONQUER &bull; ASCEND</p>
+        </div>
+        <div class="gameover-box" style="max-width: 320px; padding: 25px; text-align: center;">
+          <h2 style="color: #fbbf24; margin-bottom: 12px; font-weight: 900; letter-spacing: 1px;">ENTER YOUR NAME</h2>
+          <p style="font-size: 12px; color: #94a3b8; margin-bottom: 15px;">Choose your arcane identity for the arena.</p>
+          <input type="text" id="name-input" maxlength="12" onkeydown="if(event.key==='Enter') submitName()" style="width: 100%; padding: 12px; margin-bottom: 18px; border-radius: 8px; border: 1px solid #a855f7; background: rgba(15,23,42,0.85); color: white; text-align: center; font-weight: bold; font-size: 16px; outline: none;" placeholder="PLAYER NAME">
+          <button class="btn-lobby-main" onclick="submitName()" style="width: 100%; justify-content: center; padding: 12px; font-size: 15px;">PLAY</button>
+        </div>
+      </div>
+
       <!-- OPERATOR ACCESS MODAL -->
       <div id="operator-modal" class="overlay-screen hidden" style="z-index: 200; background: rgba(0,0,0,0.85);">
         <div class="gameover-box" style="max-width: 320px; padding: 20px;">
           <h2 style="color: #a855f7; margin-bottom: 10px; font-weight: 900;">OPERATOR ACCESS</h2>
-          <input type="password" id="operator-input" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #a855f7; background: rgba(15,23,42,0.8); color: white; text-align: center; font-weight: bold;" placeholder="ENTER KEY...">
+          <input type="password" id="operator-input" onkeydown="if(event.key==='Enter') submitOperatorKey()" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #a855f7; background: rgba(15,23,42,0.8); color: white; text-align: center; font-weight: bold;" placeholder="ENTER KEY...">
           <div style="display: flex; gap: 10px; width: 100%;">
             <button class="btn-lobby-sec" onclick="closeOperatorModal()" style="flex: 1; justify-content: center;">CANCEL</button>
             <button class="btn-lobby-main" onclick="submitOperatorKey()" style="flex: 1; padding: 10px; font-size: 14px;">VERIFY</button>
@@ -1171,9 +1187,21 @@
       // ==========================================
       // PERSISTENT DATA & ECONOMY
       // ==========================================
-      let autoAimEnabled = true;
+      const OPERATOR_KEY = 'ALPHA3026';
+      const TOTAL_FIGHTERS = 50;
+      const BOT_COUNT = TOTAL_FIGHTERS - 1;
+      const LOOT_SPAWN_COUNT = 350;
+      const killFeedTimers = [];
+      let isAiming = false;
+      let aimAction = null;
+      let aimAngle = 0;
+      let aimPointerId = null;
+      let isMapExpanded = false;
+      let killstreakTimer = null;
       const STORAGE_KEY = 'arcane_royale_save_v2';
       const PlayerData = {
+        playerName: "Player",
+        autoAimEnabled: true,
         gold: 500,
         gems: 50,
         xp: 0,
@@ -1192,6 +1220,8 @@
               Object.assign(this, data);
             }
           } catch(e) {}
+          if (typeof this.playerName !== 'string' || !this.playerName.trim()) this.playerName = "Player";
+          if (typeof this.autoAimEnabled !== 'boolean') this.autoAimEnabled = true;
           if (!this.unlockedFighters.includes('BERSERKER')) {
             this.unlockedFighters.push('BERSERKER');
           }
@@ -1203,6 +1233,8 @@
         save() {
           try {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({
+              playerName: this.playerName,
+              autoAimEnabled: this.autoAimEnabled,
               gold: this.gold,
               gems: this.gems,
               xp: this.xp,
@@ -1218,6 +1250,48 @@
         }
       };
 
+      function submitName() {
+        const input = document.getElementById('name-input');
+        const val = input ? input.value.trim() : '';
+        PlayerData.playerName = val || "Player";
+        PlayerData.save();
+        const loginEl = document.getElementById('login-screen');
+        if (loginEl) loginEl.classList.add('hidden');
+        UIController.showLobby();
+      }
+
+      function toggleMapExpand() {
+        isMapExpanded = !isMapExpanded;
+        const btn = document.getElementById('btn-expand-map');
+        if (btn) btn.innerText = isMapExpanded ? '🗺️ Close' : '🗺️ Expand';
+      }
+
+      function getBotSkill() {
+        const lvl = PlayerData.level || 1;
+        const r = Math.random();
+        if (lvl <= 3) {
+          if (r < 0.40) return "NOOB";
+          if (r < 0.70) return "ROOKIE";
+          if (r < 0.90) return "AVERAGE";
+          return "SKILLED";
+        } else if (lvl <= 7) {
+          if (r < 0.20) return "NOOB";
+          if (r < 0.45) return "ROOKIE";
+          if (r < 0.70) return "AVERAGE";
+          if (r < 0.85) return "SKILLED";
+          if (r < 0.95) return "VETERAN";
+          return "ELITE";
+        } else {
+          if (r < 0.05) return "NOOB";
+          if (r < 0.15) return "ROOKIE";
+          if (r < 0.35) return "AVERAGE";
+          if (r < 0.60) return "SKILLED";
+          if (r < 0.80) return "VETERAN";
+          if (r < 0.90) return "ELITE";
+          return "PRO";
+        }
+      }
+
       // THE OPERATOR KEY (Admin Cheat Menu)
       function triggerOperatorAccess() {
         AudioEngine.init();
@@ -1231,12 +1305,14 @@
 
       function submitOperatorKey() {
         const pass = document.getElementById('operator-input').value;
-        if (pass === "ALPHA3026") {
+        if (pass === OPERATOR_KEY) {
           PlayerData.gold = 99999;
           PlayerData.gems = 9999;
           PlayerData.unlockedFighters = ['BERSERKER', 'TIDECALLER', 'SHADOW'];
           PlayerData.save();
           if (typeof renderShopCards === 'function') renderShopCards();
+          if (typeof updateCurrencyUI === 'function') updateCurrencyUI();
+          if (typeof updateLobbyShowcase === 'function') updateLobbyShowcase();
           AudioEngine.sfxPurchase();
           closeOperatorModal();
           showToast("✓ Operator Access Granted", false);
@@ -1298,6 +1374,7 @@
           } catch(e) {}
         },
         sfxSword() {
+          this.playTone(1200, 'sine', 0.05, 0.25);
           this.playNoise(0.12, 0.2);
           this.playTone(420, 'triangle', 0.1, 0.2, 180);
         },
@@ -1311,7 +1388,8 @@
           }
         },
         sfxHit() {
-          this.playTone(130, 'sawtooth', 0.15, 0.35, 60);
+          this.playTone(95, 'square', 0.12, 0.35, 45);
+          this.playNoise(0.08, 0.2);
         },
         sfxDash() {
           this.playNoise(0.18, 0.15);
@@ -1330,8 +1408,9 @@
           setTimeout(() => this.playTone(784, 'triangle', 0.25, 0.4), 220);
         },
         sfxVictory() {
-          this.playTone(440, 'triangle', 0.3, 0.3, 880);
-          setTimeout(() => this.playTone(880, 'triangle', 0.6, 0.35), 250);
+          this.playTone(523, 'triangle', 0.2, 0.35);
+          setTimeout(() => this.playTone(659, 'triangle', 0.25, 0.35), 180);
+          setTimeout(() => this.playTone(784, 'triangle', 0.5, 0.4), 360);
         },
         sfxDefeat() {
           this.playTone(280, 'sawtooth', 0.4, 0.3, 90);
@@ -1367,7 +1446,7 @@
         AudioEngine.init();
         try {
           const clone = document.documentElement.cloneNode(true);
-          clone.querySelectorAll('script[src*="vite"], script[src*="_aistudio"], script[src*="html2canvas"]').forEach(el => el.remove());
+          clone.querySelectorAll('script[src*="vite"], script[src*="_aistudio"], script[src*="html2canvas"], script[src*="aistudio"], link[href*="aistudio"], [id^="__aistudio"]').forEach(el => el.remove());
           clone.querySelectorAll('style').forEach(style => { if (style.textContent.includes('aistudio-')) style.remove(); });
           const htmlContent = "<!doctype html>\n" + clone.outerHTML;
           const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
@@ -1393,6 +1472,12 @@
       const CTX = CANVAS.getContext('2d', { alpha: false });
       const ARENA_WIDTH = 20000;
       const ARENA_HEIGHT = 20000;
+
+      const GROUND_IMG = new Image();
+      GROUND_IMG.crossOrigin = "anonymous";
+      GROUND_IMG.src = "https://zakiyt654321-gif.github.io/Arcane-Royal/assets/Image/ground.webp";
+      let groundImgLoaded = false;
+      GROUND_IMG.onload = () => { groundImgLoaded = true; };
 
       function resizeCanvas() {
         const dpr = window.devicePixelRatio || 1;
@@ -1570,7 +1655,7 @@
       ];
       const obstaclePool = MAP_LAYOUT.map(r => ({ x: r[0], y: r[1], w: r[2], h: r[3] }));
 
-      const MAX_LOOT = 150;
+      const MAX_LOOT = 500;
       const lootPool = [];
       for (let i = 0; i < MAX_LOOT; i++) lootPool.push({ active: false, x: 0, y: 0, type: 'GOLD', radius: 15 });
 
@@ -1606,12 +1691,14 @@
           feed.removeChild(feed.firstChild);
         }
         
-        setTimeout(() => {
+        const t1 = setTimeout(() => {
           item.classList.add('fade-out');
-          setTimeout(() => {
+          const t2 = setTimeout(() => {
             if (item.parentNode) item.parentNode.removeChild(item);
           }, 450);
+          killFeedTimers.push(t2);
         }, 3600);
+        killFeedTimers.push(t1);
       }
 
       function spawnParticles(x, y, count, color, speed = 3, decay = 0.04) {
@@ -1728,33 +1815,58 @@
           window.addEventListener('pointercancel', resetJoystick);
           window.addEventListener('pointerleave', resetJoystick);
 
-          // Action Buttons binding with strict pointer ID tracking (prevents multi-touch drop)
-          const swordBtn = document.getElementById('btn-sword');
-          if (swordBtn) {
-            swordBtn.addEventListener('pointerdown', (e) => {
+          // Unified Hold-and-Drag Aiming (Free Fire style) for sword, spell, art
+          const aimActions = { 'btn-sword': 'sword', 'btn-spell': 'spell', 'btn-art': 'art' };
+          Object.entries(aimActions).forEach(([btnId, action]) => {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            btn.addEventListener('pointerdown', (e) => {
               e.preventDefault();
               AudioEngine.init();
-              this.isHoldingSword = true;
-              this.swordPointerId = e.pointerId;
-              this.buttons['sword'] = true;
-              swordBtn.classList.add('pressed');
-              Game.playerAction('sword');
-            });
-            const releaseSword = (e) => {
-              if (this.swordPointerId !== null && (e.pointerId === undefined || e.pointerId === this.swordPointerId)) {
-                this.isHoldingSword = false;
-                this.swordPointerId = null;
-                this.buttons['sword'] = false;
-                swordBtn.classList.remove('pressed');
+              isAiming = true;
+              aimAction = action;
+              aimPointerId = e.pointerId;
+              const cx = window.innerWidth / 2;
+              const cy = window.innerHeight / 2;
+              aimAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
+              if (Game.player && Game.player.isAlive) {
+                Game.player.facingAngle = aimAngle;
               }
-            };
-            window.addEventListener('pointerup', releaseSword);
-            window.addEventListener('pointercancel', releaseSword);
-            window.addEventListener('pointerleave', releaseSword);
-          }
-          this.bindButton('btn-spell', 'spell', () => Game.playerAction('spell'));
+              btn.classList.add('pressed');
+            });
+          });
+
+          window.addEventListener('pointermove', (e) => {
+            if (isAiming && (e.pointerId === undefined || e.pointerId === aimPointerId)) {
+              const cx = window.innerWidth / 2;
+              const cy = window.innerHeight / 2;
+              aimAngle = Math.atan2(e.clientY - cy, e.clientX - cx);
+              if (Game.player && Game.player.isAlive) {
+                Game.player.facingAngle = aimAngle;
+              }
+            }
+          });
+
+          const finishAim = (e) => {
+            if (isAiming && (e.pointerId === undefined || e.pointerId === aimPointerId)) {
+              const act = aimAction;
+              isAiming = false;
+              aimAction = null;
+              aimPointerId = null;
+              ['btn-sword', 'btn-spell', 'btn-art'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) b.classList.remove('pressed');
+              });
+              if (act) {
+                Game.playerAction(act);
+              }
+            }
+          };
+          window.addEventListener('pointerup', finishAim);
+          window.addEventListener('pointercancel', finishAim);
+
+          // Dash remains instant
           this.bindButton('btn-dash', 'dash', () => Game.playerAction('dash'));
-          this.bindButton('btn-art', 'art', () => Game.playerAction('art'));
         },
 
         bindButton(elemId, actionKey, callback) {
@@ -1873,10 +1985,11 @@
       }
 
       function toggleAutoAim() {
-        autoAimEnabled = !autoAimEnabled;
+        PlayerData.autoAimEnabled = !PlayerData.autoAimEnabled;
+        PlayerData.save();
         const btn = document.getElementById('btn-autoaim');
-        if (btn) btn.innerText = autoAimEnabled ? '🎯 Auto-Aim: ON' : '🎯 Auto-Aim: OFF';
-        showToast('Auto-Aim: ' + (autoAimEnabled ? 'ON' : 'OFF'), autoAimEnabled ? false : true);
+        if (btn) btn.innerText = PlayerData.autoAimEnabled ? '🎯 Auto-Aim: ON' : '🎯 Auto-Aim: OFF';
+        showToast('Auto-Aim: ' + (PlayerData.autoAimEnabled ? 'ON' : 'OFF'), PlayerData.autoAimEnabled ? false : true);
       }
 
       // ==========================================
@@ -2013,6 +2126,8 @@
         // Idle bob animation (Math.sin(performance.now() / 200))
         const idleBob = Math.sin(performance.now() / 200) * 1.5;
         ctx.translate(0, idleBob);
+        const floatRot = Math.sin(performance.now() / 300) * 0.05;
+        ctx.rotate(floatRot);
 
         // Bright gold glowing aura for human player
         if (isPlayer) {
@@ -2110,6 +2225,7 @@
           this.boredomTimer = 0;
           this.kills = 0;
           this.damageDealt = 0;
+          this.killStreak = 0;
         }
 
         update(deltaTime, gameTime) {
@@ -2155,6 +2271,7 @@
             }
             if (eff.duration <= 0) this.effects.splice(i, 1);
           }
+          if (!this.isAlive) return;
 
           let moveX = 0;
           let moveY = 0;
@@ -2220,14 +2337,20 @@
           this.hp -= amount;
           this.hitFlashTimer = 0.1;
           spawnParticles(this.x, this.y, 6, '#ef4444', 4);
-          spawnDamageText(this.x, this.y, Math.round(amount).toString(), '#fca5a5');
 
           if (this.isPlayer && triggerShake) {
             Camera.shakeAmount = shakeMagnitude;
             triggerScreenFlash();
             AudioEngine.sfxHit();
+            spawnDamageText(this.x, this.y, Math.round(amount).toString(), '#fca5a5');
           } else if (source && source.isPlayer) {
+            // Hit-stop effect: freeze enemy velocity and enlarge damage text
+            this.knockbackVx = 0;
+            this.knockbackVy = 0;
+            spawnDamageText(this.x, this.y, `💥 ${Math.round(amount)}`, '#fef08a');
             AudioEngine.sfxHit();
+          } else {
+            spawnDamageText(this.x, this.y, Math.round(amount).toString(), '#fca5a5');
           }
 
           if (source) source.damageDealt += amount;
@@ -2247,15 +2370,46 @@
             killer.kills++;
           }
 
-          // PART 1: Kill Feed Notification
+          // Section 6: Kill Streak system
+          if (killer && killer.isPlayer) {
+            if (Game.player) {
+              Game.player.killStreak = (Game.player.killStreak || 0) + 1;
+              const streak = Game.player.killStreak;
+              let bannerText = "";
+              if (streak === 2) bannerText = "DOUBLE KILL";
+              else if (streak === 3) bannerText = "TRIPLE KILL";
+              else if (streak === 4) bannerText = "QUAD KILL";
+              else if (streak >= 5) bannerText = "RAMPAGE";
+
+              if (bannerText) {
+                const banner = document.getElementById('killstreak-banner');
+                if (banner) {
+                  banner.innerText = bannerText;
+                  banner.style.opacity = '1';
+                  if (killstreakTimer) clearTimeout(killstreakTimer);
+                  killstreakTimer = setTimeout(() => {
+                    if (banner) banner.style.opacity = '0';
+                    killstreakTimer = null;
+                  }, 2000);
+                }
+              }
+            }
+          }
+          if (this.isPlayer) {
+            if (Game.player) Game.player.killStreak = 0;
+            this.killStreak = 0;
+          }
+
+          // PART 1: Kill Feed Notification (Section 1: PlayerData.playerName, Section 9: Silent catch)
           try {
-            const kName = killer ? (killer.isPlayer ? "Player" : (killer.data && killer.data.name ? killer.data.name : "Bot")) : "The Storm";
-            const kChar = killer ? ((killer.data && killer.data.name) ? killer.data.name.replace(/^The\s+/, '') : (killer.isPlayer ? "Player" : "")) : "";
-            const vName = this.isPlayer ? "Player" : (this.data && this.data.name ? this.data.name : "Bot");
-            const vChar = (this.data && this.data.name) ? this.data.name.replace(/^The\s+/, '') : (this.isPlayer ? "Player" : "");
+            const playerName = PlayerData.playerName || "Player";
+            const kName = killer ? (killer.isPlayer ? playerName : (killer.data && killer.data.name ? killer.data.name : "Bot")) : "The Storm";
+            const kChar = killer ? ((killer.data && killer.data.name) ? killer.data.name.replace(/^The\s+/, '') : (killer.isPlayer ? playerName : "")) : "";
+            const vName = this.isPlayer ? playerName : (this.data && this.data.name ? this.data.name : "Bot");
+            const vChar = (this.data && this.data.name) ? this.data.name.replace(/^The\s+/, '') : (this.isPlayer ? playerName : "");
             addKillFeed(kName, kChar, vName, vChar);
           } catch (e) {
-            console.error("KillFeed error:", e);
+            // Silent catch
           }
 
           // FIX #2: Immediate death processing without race conditions
@@ -2404,14 +2558,42 @@
               spawnParticles(startX + (endX - startX) * t, startY + (endY - startY) * t, 5, '#a855f7', 2);
             }
 
-            this.x = endX;
-            this.y = endY;
+            let resolvedX = endX;
+            let resolvedY = endY;
+            for (let i = 0; i < obstaclePool.length; i++) {
+              const obs = obstaclePool[i];
+              const testX = Math.max(obs.x, Math.min(resolvedX, obs.x + obs.w));
+              const testY = Math.max(obs.y, Math.min(resolvedY, obs.y + obs.h));
+              const distX = resolvedX - testX;
+              const distY = resolvedY - testY;
+              const dist = Math.hypot(distX, distY);
+              if (dist < this.radius) {
+                if (dist === 0) {
+                  const leftPush = resolvedX - obs.x + this.radius;
+                  const rightPush = (obs.x + obs.w) - resolvedX + this.radius;
+                  const topPush = resolvedY - obs.y + this.radius;
+                  const bottomPush = (obs.y + obs.h) - resolvedY + this.radius;
+                  const minPush = Math.min(leftPush, rightPush, topPush, bottomPush);
+                  if (minPush === leftPush) resolvedX -= leftPush;
+                  else if (minPush === rightPush) resolvedX += rightPush;
+                  else if (minPush === topPush) resolvedY -= topPush;
+                  else resolvedY += bottomPush;
+                } else {
+                  const overlap = this.radius - dist;
+                  resolvedX += (distX / dist) * overlap;
+                  resolvedY += (distY / dist) * overlap;
+                }
+              }
+            }
+            this.x = Math.max(this.radius, Math.min(ARENA_WIDTH - this.radius, resolvedX));
+            this.y = Math.max(this.radius, Math.min(ARENA_HEIGHT - this.radius, resolvedY));
             this.invulnerableTimer = 0.5;
           }
           return true;
         }
 
         checkSwordCollisions() {
+          if (!this.isAlive) return;
           const forwardDist = 45;
           const hx = this.x + Math.cos(this.facingAngle) * forwardDist;
           const hy = this.y + Math.sin(this.facingAngle) * forwardDist;
@@ -2434,7 +2616,13 @@
 
         // FIX #4: Bot AI Freeze Prevention when last alive
         updateBotAI(deltaTime, gameTime) {
-          if (this.skill === 'NOOB' && Math.random() < 0.05) { this.aiMoveX = 0; this.aiMoveY = 0; return; }
+          let dodgeChance = this.skill === 'NOOB' ? 0 : this.skill === 'ROOKIE' ? 0.05 : this.skill === 'AVERAGE' ? 0.15 : this.skill === 'SKILLED' ? 0.25 : this.skill === 'VETERAN' ? 0.35 : this.skill === 'ELITE' ? 0.45 : 0.6;
+          if (this.skill === 'NOOB' && Math.random() < 0.20) {
+            this.wanderAngle += (Math.random() - 0.5) * 1.5;
+            this.aiMoveX = Math.cos(this.wanderAngle) * 0.5;
+            this.aiMoveY = Math.sin(this.wanderAngle) * 0.5;
+            return;
+          }
           if (this.skill === 'PRO' && this.target) {
             this.facingAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
           }
@@ -2450,16 +2638,24 @@
 
           let closestEnemy = null;
           let closestDist = 999999;
-          for (let i = 0; i < Game.entities.length; i++) {
-            const e = Game.entities[i];
-            if (e === this || !e.isAlive) continue;
-            const d = Math.hypot(e.x - this.x, e.y - this.y);
-            if (d < closestDist) {
-              closestDist = d;
-              closestEnemy = e;
+          if (this.skill === 'PRO' && Game.player && Game.player.isAlive) {
+            closestEnemy = Game.player;
+            closestDist = Math.hypot(Game.player.x - this.x, Game.player.y - this.y);
+          } else {
+            for (let i = 0; i < Game.entities.length; i++) {
+              const e = Game.entities[i];
+              if (e === this || !e.isAlive) continue;
+              const d = Math.hypot(e.x - this.x, e.y - this.y);
+              if (d < closestDist) {
+                closestDist = d;
+                closestEnemy = e;
+              }
             }
           }
           this.target = closestEnemy;
+          if (this.skill === 'PRO' && this.target) {
+            this.facingAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+          }
 
           // If no enemies left, wander naturally toward safe zone center
           if (!closestEnemy) {
@@ -2618,7 +2814,7 @@
               const pdx = proj.x - this.x;
               const pdy = proj.y - this.y;
               const pdist = Math.hypot(pdx, pdy);
-              if (pdist < 120 && this.mana >= 12 && gameTime >= (this.nextDashTry || 0) && Math.random() < 0.08) {
+              if (pdist < 120 && this.mana >= 12 && gameTime >= (this.nextDashTry || 0) && Math.random() < dodgeChance) {
                 this.nextDashTry = gameTime + 1.2 + Math.random() * 1.8;
                 const dodgeAngle = Math.atan2(proj.vy, proj.vx) + Math.PI / 2;
                 steerX += Math.cos(dodgeAngle) * 1.5;
@@ -2702,19 +2898,19 @@
       // SHRINKING STORM (FIX #9: Storm Clipping)
       // ==========================================
       const Storm = {
-        currentCenterX: 1500,
-        currentCenterY: 1500,
-        currentRadius: 1200,
-        targetRadius: 1200,
+        currentCenterX: 10000,
+        currentCenterY: 10000,
+        currentRadius: 20000,
+        targetRadius: 20000,
         phase: 1,
         damageTimer: 0,
         timerInPhase: 0,
 
         init() {
-          this.currentCenterX = 5000 + Math.random() * 10000;
-          this.currentCenterY = 5000 + Math.random() * 10000;
-          this.currentRadius = 1200;
-          this.targetRadius = 1200;
+          this.currentCenterX = 10000;
+          this.currentCenterY = 10000;
+          this.currentRadius = 20000;
+          this.targetRadius = 20000;
           this.phase = 1;
           this.damageTimer = 0;
           this.timerInPhase = 0;
@@ -2723,21 +2919,37 @@
         update(deltaTime, matchTime) {
           this.timerInPhase += deltaTime;
 
-          if (matchTime < 45) {
+          if (matchTime < 180) {
             this.phase = 1;
-            this.targetRadius = 1200;
-          } else if (matchTime < 90) {
+            this.targetRadius = 20000;
+          } else if (matchTime < 240) {
             this.phase = 2;
-            const progress = Math.min(1.0, (matchTime - 45) / 15);
-            this.targetRadius = 1200 - (1200 - 800) * progress;
-          } else if (matchTime < 135) {
+            const progress = (matchTime - 180) / 60;
+            this.targetRadius = 20000 - (20000 - 12000) * progress;
+          } else if (matchTime < 420) {
             this.phase = 3;
-            const progress = Math.min(1.0, (matchTime - 90) / 15);
-            this.targetRadius = 800 - (800 - 400) * progress;
-          } else {
+            this.targetRadius = 12000;
+          } else if (matchTime < 480) {
             this.phase = 4;
-            const progress = Math.min(1.0, (matchTime - 135) / 15);
-            this.targetRadius = 400 - (400 - 150) * progress;
+            const progress = (matchTime - 420) / 60;
+            this.targetRadius = 12000 - (12000 - 7000) * progress;
+          } else if (matchTime < 660) {
+            this.phase = 5;
+            this.targetRadius = 7000;
+          } else if (matchTime < 720) {
+            this.phase = 6;
+            const progress = (matchTime - 660) / 60;
+            this.targetRadius = 7000 - (7000 - 3000) * progress;
+          } else if (matchTime < 840) {
+            this.phase = 7;
+            this.targetRadius = 3000;
+          } else if (matchTime < 900) {
+            this.phase = 8;
+            const progress = (matchTime - 840) / 60;
+            this.targetRadius = 3000 - (3000 - 800) * progress;
+          } else {
+            this.phase = 9;
+            this.targetRadius = Math.max(100, 800 - (matchTime - 900) * 15);
           }
 
           this.currentRadius += (this.targetRadius - this.currentRadius) * Math.min(1.0, deltaTime * 2.0);
@@ -2745,14 +2957,16 @@
           this.damageTimer += deltaTime;
           if (this.damageTimer >= 1.0) {
             this.damageTimer = 0;
-            const damagePerTick = 5 + Math.max(0, matchTime - 150) * 0.35;
-            for (let i = 0; i < Game.entities.length; i++) {
-              const e = Game.entities[i];
-              if (!e.isAlive) continue;
-              const d = Math.hypot(e.x - this.currentCenterX, e.y - this.currentCenterY);
-              if (d > this.currentRadius) {
-                e.takeDamage(damagePerTick, null, false, 0);
-                spawnDamageText(e.x, e.y, `STORM -${Math.round(damagePerTick)}`, "#c084fc");
+            if (this.phase >= 4) {
+              const damagePerTick = 5 + Math.max(0, matchTime - 180) * 0.1;
+              for (let i = 0; i < Game.entities.length; i++) {
+                const e = Game.entities[i];
+                if (!e.isAlive) continue;
+                const d = Math.hypot(e.x - this.currentCenterX, e.y - this.currentCenterY);
+                if (d > this.currentRadius) {
+                  e.takeDamage(damagePerTick, null, false, 0);
+                  spawnDamageText(e.x, e.y, `STORM -${Math.round(damagePerTick)}`, "#c084fc");
+                }
               }
             }
           }
@@ -2819,15 +3033,18 @@
       const Game = {
         state: "LOBBY",
         time: 0,
-        aliveCount: 8,
+        aliveCount: TOTAL_FIGHTERS,
         entities: [],
         player: null,
         storm: Storm,
         matchFinished: false,
 
         init(spawnX, spawnY) {
-          this.state = "PLAYING"; this.time = 0; this.aliveCount = 50; this.matchFinished = false; this.entities = [];
-          const kf = document.getElementById('kill-feed'); if (kf) kf.innerHTML = '';
+          this.state = "PLAYING"; this.time = 0; this.aliveCount = TOTAL_FIGHTERS; this.matchFinished = false; this.entities = [];
+          const kf = document.getElementById('kill-feed');
+          if (kf) kf.innerHTML = '';
+          for (let i = 0; i < killFeedTimers.length; i++) clearTimeout(killFeedTimers[i]);
+          killFeedTimers.length = 0;
           Input.joystickX = 0; Input.joystickY = 0; Input.moveX = 0; Input.moveY = 0; Input.isHoldingSword = false;
           const stick = document.getElementById('joystick-stick'); if (stick) stick.style.transform = 'translate(0px, 0px)';
           Camera.shakeAmount = 0; lastHudUpdate = 0; lastWarningBeepSec = -1; isStormTintActive = false;
@@ -2838,10 +3055,25 @@
           for (let i = 0; i < MAX_TEXTS; i++) damageTextPool[i].active = false;
           for (let i = 0; i < MAX_LOOT; i++) lootPool[i].active = false;
 
-          for (let i = 0; i < 150; i++) {
-            const r = Math.random();
-            const type = r < 0.5 ? 'GOLD' : (r < 0.8 ? 'MEDKIT' : (r < 0.95 ? 'MANA' : 'GEMS'));
-            spawnLoot(1000 + Math.random() * 18000, 1000 + Math.random() * 18000, type);
+          for (let i = 0; i < LOOT_SPAWN_COUNT; i++) {
+            let type;
+            if (i < 75) {
+              type = 'GOLD';
+            } else if (i < 85) {
+              type = 'GEMS';
+            } else {
+              type = Math.random() < 0.6 ? 'MEDKIT' : 'MANA';
+            }
+            let lx = 1000 + Math.random() * 18000;
+            let ly = 1000 + Math.random() * 18000;
+            if (obstaclePool.length > 0) {
+              const obs = obstaclePool[Math.floor(Math.random() * obstaclePool.length)];
+              const centerX = obs.x + obs.w / 2;
+              const centerY = obs.y + obs.h / 2;
+              lx = Math.max(50, Math.min(ARENA_WIDTH - 50, centerX + (Math.random() * 600 - 300)));
+              ly = Math.max(50, Math.min(ARENA_HEIGHT - 50, centerY + (Math.random() * 600 - 300)));
+            }
+            spawnLoot(lx, ly, type);
           }
 
           this.storm.init();
@@ -2851,11 +3083,10 @@
           Camera.x = px; Camera.y = py;
 
           const roster = ["BERSERKER", "TIDECALLER", "SHADOW"];
-          const skills = ["NOOB", "AVERAGE", "PRO"];
-          for (let i = 0; i < 49; i++) {
+          for (let i = 0; i < BOT_COUNT; i++) {
             const bx = 1000 + Math.random() * 18000; const by = 1000 + Math.random() * 18000;
             const bot = new Entity(bx, by, false, roster[i % roster.length]);
-            bot.skill = skills[Math.floor(Math.random() * skills.length)];
+            bot.skill = getBotSkill();
             this.entities.push(bot);
           }
           UIController.showHUD(); updateHUD();
@@ -2976,7 +3207,7 @@
           if (this.state !== "PLAYING" || !this.player || !this.player.isAlive) return;
 
           // FIX 8: Dynamic Auto-Aim Range (Sword: 130, Spell: spellMaxRange, Art: 180)
-          if (autoAimEnabled) {
+          if (PlayerData.autoAimEnabled) {
             let autoAimRange = 0;
             if (action === 'sword') autoAimRange = 130;
             else if (action === 'spell') autoAimRange = (this.player.data && this.player.data.spellMaxRange) || 500;
@@ -3074,54 +3305,26 @@
         CTX.fillStyle = '#040208';
         CTX.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
 
-        const tileSize = 180;
+        const groundTileSize = 400;
+        const tileSize = groundTileSize;
         const zoom = Camera.getZoom();
-        const halfW = (window.innerWidth / (2 * zoom)) + tileSize;
-        const halfH = (window.innerHeight / (2 * zoom)) + tileSize;
-        const startCol = Math.max(0, Math.floor((Camera.x - halfW) / tileSize));
-        const endCol = Math.min(Math.ceil(ARENA_WIDTH / tileSize), Math.ceil((Camera.x + halfW) / tileSize));
-        const startRow = Math.max(0, Math.floor((Camera.y - halfH) / tileSize));
-        const endRow = Math.min(Math.ceil(ARENA_HEIGHT / tileSize), Math.ceil((Camera.y + halfH) / tileSize));
-        const t = Game.time;
+        const halfW = (window.innerWidth / (2 * zoom)) + groundTileSize;
+        const halfH = (window.innerHeight / (2 * zoom)) + groundTileSize;
+        const startCol = Math.max(0, Math.floor((Camera.x - halfW) / groundTileSize));
+        const endCol = Math.min(Math.ceil(ARENA_WIDTH / groundTileSize), Math.ceil((Camera.x + halfW) / groundTileSize));
+        const startRow = Math.max(0, Math.floor((Camera.y - halfH) / groundTileSize));
+        const endRow = Math.min(Math.ceil(ARENA_HEIGHT / groundTileSize), Math.ceil((Camera.y + halfH) / groundTileSize));
 
         for (let ix = startCol; ix < endCol; ix++) {
           for (let iy = startRow; iy < endRow; iy++) {
-            const tileX = ix * tileSize;
-            const tileY = iy * tileSize;
-
-            // Deep void stone slabs
-            CTX.fillStyle = (ix + iy) % 2 === 0 ? '#070510' : '#04020a';
-            CTX.fillRect(tileX + 1, tileY + 1, tileSize - 2, tileSize - 2);
-
-            // Faint, slowly shifting dark-purple geometric runes
-            const runePhase = t * 0.8 + ix * 0.6 + iy * 0.8;
-            const runeAlpha = 0.045 + Math.sin(runePhase) * 0.025;
-            CTX.save();
-            CTX.strokeStyle = `rgba(168, 85, 247, ${runeAlpha})`;
-            CTX.lineWidth = 1.2;
-            const cx = tileX + tileSize / 2;
-            const cy = tileY + tileSize / 2;
-
-            CTX.beginPath();
-            CTX.arc(cx, cy, 48, 0, Math.PI * 2);
-            CTX.stroke();
-
-            CTX.beginPath();
-            CTX.arc(cx, cy, 22, 0, Math.PI * 2);
-            CTX.stroke();
-
-            const rot = t * 0.12 + (ix + iy) * 0.4;
-            CTX.beginPath();
-            for (let k = 0; k < 4; k++) {
-              const ang = rot + (k * Math.PI / 2);
-              const rx = cx + Math.cos(ang) * 36;
-              const ry = cy + Math.sin(ang) * 36;
-              if (k === 0) CTX.moveTo(rx, ry);
-              else CTX.lineTo(rx, ry);
+            const tileX = ix * groundTileSize;
+            const tileY = iy * groundTileSize;
+            if (groundImgLoaded) {
+              CTX.drawImage(GROUND_IMG, tileX, tileY, groundTileSize, groundTileSize);
+            } else {
+              CTX.fillStyle = '#040208';
+              CTX.fillRect(tileX, tileY, groundTileSize, groundTileSize);
             }
-            CTX.closePath();
-            CTX.stroke();
-            CTX.restore();
           }
         }
 
@@ -3292,27 +3495,65 @@
 
         Camera.restore(CTX);
 
+        // Section 5: Aiming Line Indicator (Screen space)
+        if (isAiming && Game.state === "PLAYING") {
+          CTX.save();
+          const cx = window.innerWidth / 2;
+          const cy = window.innerHeight / 2;
+          const targetX = cx + Math.cos(aimAngle) * 300;
+          const targetY = cy + Math.sin(aimAngle) * 300;
+
+          // Bright neon line
+          CTX.strokeStyle = '#38bdf8';
+          CTX.lineWidth = 3;
+          CTX.shadowColor = '#06b6d4';
+          CTX.shadowBlur = 12;
+          CTX.beginPath();
+          CTX.moveTo(cx, cy);
+          CTX.lineTo(targetX, targetY);
+          CTX.stroke();
+
+          // Reticle head
+          CTX.beginPath();
+          CTX.arc(targetX, targetY, 5, 0, Math.PI * 2);
+          CTX.fillStyle = '#38bdf8';
+          CTX.fill();
+          CTX.restore();
+        }
+
         // ==========================================
-        // PART 3: MINIMAP (Screen-space Canvas HUD)
+        // PART 3: MINIMAP (Screen-space Canvas HUD - Section 7)
         // ==========================================
         if (Game.state === "PLAYING") {
-          const mapSize = Math.min(110, Math.floor(window.innerHeight * 0.28));
-          const mapX = 14;
-          // Positioned above the virtual joystick in bottom-left area
-          const mapY = Math.max(70, window.innerHeight - 145 - mapSize);
+          let mapSize, mapX, mapY;
+          if (isMapExpanded) {
+            mapSize = Math.min(window.innerWidth, window.innerHeight) * 0.8;
+            mapX = (window.innerWidth - mapSize) / 2;
+            mapY = (window.innerHeight - mapSize) / 2;
+
+            // Dark backdrop behind expanded map
+            CTX.save();
+            CTX.fillStyle = 'rgba(2, 6, 23, 0.75)';
+            CTX.fillRect(0, 0, window.innerWidth, window.innerHeight);
+            CTX.restore();
+          } else {
+            mapSize = Math.min(110, Math.floor(window.innerHeight * 0.28));
+            mapX = 14;
+            mapY = Math.max(70, window.innerHeight - 145 - mapSize);
+          }
           
           CTX.save();
-          CTX.globalAlpha = 0.65;
+          CTX.globalAlpha = isMapExpanded ? 0.95 : 0.65;
           
           // Dark background square with glassmorphism feel
-          CTX.fillStyle = 'rgba(15, 23, 42, 0.75)';
+          CTX.fillStyle = 'rgba(15, 23, 42, 0.85)';
           CTX.fillRect(mapX, mapY, mapSize, mapSize);
           
           // Neon purple border
           CTX.strokeStyle = '#a855f7';
-          CTX.lineWidth = 1.5;
+          CTX.lineWidth = isMapExpanded ? 2.5 : 1.5;
           CTX.shadowColor = '#a855f7';
-          CTX.shadowBlur = 6;
+          CTX.shadowBlur = isMapExpanded ? 12 : 6;
           CTX.strokeRect(mapX, mapY, mapSize, mapSize);
           CTX.shadowBlur = 0;
           
@@ -3442,6 +3683,8 @@
           this.hudContainer.style.display = 'none';
           updateLobbyShowcase();
           updateCurrencyUI();
+          const btn = document.getElementById('btn-autoaim');
+          if (btn) btn.innerText = PlayerData.autoAimEnabled ? '🎯 Auto-Aim: ON' : '🎯 Auto-Aim: OFF';
         },
 
         showHUD() {
@@ -3471,7 +3714,7 @@
           document.getElementById('rw-breakdown-placement').innerText = `Placement: #${placement}`;
           document.getElementById('rw-breakdown-kills').innerText = `Kills: ${kills} | +${xpEarned} XP${isLevelUp ? ' ⭐ LEVEL UP!' : ''}`;
 
-          document.getElementById('stat-placement').innerText = `#${placement} / 50`;
+          document.getElementById('stat-placement').innerText = `#${placement} / ${TOTAL_FIGHTERS}`;
           document.getElementById('stat-fighter').innerText = player ? player.data.name : "Champion";
           document.getElementById('stat-kills').innerText = kills;
           document.getElementById('stat-damage').innerText = player ? Math.round(player.damageDealt) : 0;
@@ -3549,12 +3792,19 @@
       }
       document.getElementById('drop-map-container').addEventListener('pointerdown', (e) => {
         const rect = document.getElementById('drop-map-container').getBoundingClientRect();
-        const x = e.clientX - rect.left; const y = e.clientY - rect.top;
-        selectedDropX = (x / 280) * ARENA_WIDTH; selectedDropY = (y / 280) * ARENA_HEIGHT;
+        const rw = rect.width || 280;
+        const rh = rect.height || 280;
+        const clampedX = Math.max(0, Math.min(rw, e.clientX - rect.left));
+        const clampedY = Math.max(0, Math.min(rh, e.clientY - rect.top));
+        selectedDropX = (clampedX / rw) * ARENA_WIDTH;
+        selectedDropY = (clampedY / rh) * ARENA_HEIGHT;
         const pin = document.getElementById('drop-pin');
-        pin.style.left = x + 'px'; pin.style.top = y + 'px'; pin.style.display = 'block';
+        pin.style.left = clampedX + 'px';
+        pin.style.top = clampedY + 'px';
+        pin.style.display = 'block';
         const btn = document.getElementById('btn-confirm-drop');
-        btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
         AudioEngine.sfxSword();
       });
       function confirmDrop() {
@@ -3725,43 +3975,58 @@
 
         if (UI_ELEMENTS.stormBadge) {
           const matchTime = Game.time;
-          let nextShrink = 45;
-          let phaseName = "Phase 1";
-          if (matchTime < 45) {
-            nextShrink = Math.ceil(45 - matchTime);
-            phaseName = "Safe Zone";
-          } else if (matchTime < 60) {
-            nextShrink = Math.ceil(60 - matchTime);
-            phaseName = "SHRINKING!";
-          } else if (matchTime < 90) {
-            nextShrink = Math.ceil(90 - matchTime);
-            phaseName = "Phase 2 Hold";
-          } else if (matchTime < 105) {
-            nextShrink = Math.ceil(105 - matchTime);
-            phaseName = "SHRINKING!";
-          } else if (matchTime < 135) {
-            nextShrink = Math.ceil(135 - matchTime);
-            phaseName = "Phase 3 Hold";
-          } else if (matchTime < 150) {
-            nextShrink = Math.ceil(150 - matchTime);
-            phaseName = "FINAL COLLAPSE!";
+          let nextSec = 180;
+          let isShrinking = false;
+          let isSuddenDeath = false;
+
+          if (matchTime < 180) {
+            nextSec = Math.ceil(180 - matchTime);
+            isShrinking = false;
+          } else if (matchTime < 240) {
+            nextSec = Math.ceil(240 - matchTime);
+            isShrinking = true;
+          } else if (matchTime < 420) {
+            nextSec = Math.ceil(420 - matchTime);
+            isShrinking = false;
+          } else if (matchTime < 480) {
+            nextSec = Math.ceil(480 - matchTime);
+            isShrinking = true;
+          } else if (matchTime < 660) {
+            nextSec = Math.ceil(660 - matchTime);
+            isShrinking = false;
+          } else if (matchTime < 720) {
+            nextSec = Math.ceil(720 - matchTime);
+            isShrinking = true;
+          } else if (matchTime < 840) {
+            nextSec = Math.ceil(840 - matchTime);
+            isShrinking = false;
+          } else if (matchTime < 900) {
+            nextSec = Math.ceil(900 - matchTime);
+            isShrinking = true;
           } else {
-            nextShrink = 0;
-            phaseName = "SUDDEN DEATH!";
+            isSuddenDeath = true;
+            nextSec = 0;
           }
-          UI_ELEMENTS.stormBadge.innerText = nextShrink > 0 ? 'STORM: ' + phaseName + ' (' + nextShrink + 's)' : 'STORM: ' + phaseName;
+
+          if (isSuddenDeath) {
+            UI_ELEMENTS.stormBadge.innerText = 'STORM: SUDDEN DEATH!';
+          } else if (isShrinking) {
+            UI_ELEMENTS.stormBadge.innerText = 'STORM: SHRINKING (' + nextSec + 's)';
+          } else {
+            UI_ELEMENTS.stormBadge.innerText = 'STORM: SAFE (' + nextSec + 's)';
+          }
 
           // DYNAMIC STORM WARNINGS: Warning pulse & per-second beep during final 5 seconds before shrink
-          const isWarning = nextShrink <= 5 && nextShrink > 0 && !phaseName.includes('SHRINKING') && phaseName !== 'SUDDEN DEATH!';
+          const isWarning = !isShrinking && nextSec <= 5 && nextSec > 0 && !isSuddenDeath;
           if (isWarning) {
             UI_ELEMENTS.stormBadge.classList.add('warning-pulse');
-            if (lastWarningBeepSec !== nextShrink) {
-              lastWarningBeepSec = nextShrink;
+            if (lastWarningBeepSec !== nextSec) {
+              lastWarningBeepSec = nextSec;
               AudioEngine.sfxWarning();
             }
           } else {
             UI_ELEMENTS.stormBadge.classList.remove('warning-pulse');
-            if (nextShrink > 5) {
+            if (nextSec > 5) {
               lastWarningBeepSec = -1;
             }
           }
@@ -3846,7 +4111,18 @@
       UI_ELEMENTS.init();
       PlayerData.load();
       Input.init();
-      UIController.showLobby();
+      if (!PlayerData.playerName || PlayerData.playerName === "Player") {
+        const loginEl = document.getElementById('login-screen');
+        if (loginEl) loginEl.classList.remove('hidden');
+        const lobbyEl = document.getElementById('lobby-screen');
+        if (lobbyEl) lobbyEl.classList.add('hidden');
+        const nameInput = document.getElementById('name-input');
+        if (nameInput) nameInput.value = PlayerData.playerName === "Player" ? "" : PlayerData.playerName;
+      } else {
+        const loginEl = document.getElementById('login-screen');
+        if (loginEl) loginEl.classList.add('hidden');
+        UIController.showLobby();
+      }
       requestAnimationFrame(gameLoop);
     </script>
   </body>
